@@ -547,59 +547,62 @@ large_tool_result_tokens = 5000
 }
 ```
 
-### llm.input Record
+### llm.input Record (actual SDK shape)
 ```json
 {
   "type": "llm.input",
-  "ts": 1710000000000,
-  "sessionKey": "abc-123",
-  "agentId": "agent-456",
-  "channelId": "ch-1",
-  "runId": "run-789",
-  "model": "anthropic/claude-sonnet-4-6",
-  "provider": "anthropic",
-  "isPrimary": true,
-  "fallbackReason": null,
+  "ts": 1773132296972,
+  "sessionKey": "agent:main:main",
+  "sessionId": "a4fd48e3-...",
+  "agentId": "main",
+  "runId": "418052d6-...",
+  "channelId": "feishu",
+  "trigger": "user",
+  "provider": "ark",
+  "model": "doubao-seed-2.0-code",
   "payload": {
-    "system": "...",
-    "messages": [...],
-    "tools": [...],
-    "maxTokens": 8192,
-    "temperature": 0.7,
-    "thinkingBudget": 4096
+    "systemPrompt": "You are a personal assistant...",
+    "prompt": "[Tue 2026-03-10 16:44 GMT+8] Say hello.",
+    "historyMessages": [{"role": "user", "content": [...], "timestamp": ...}, ...],
+    "imagesCount": 0
   }
 }
 ```
 
-### llm.output Record
+### llm.output Record (actual SDK shape)
 ```json
 {
   "type": "llm.output",
-  "ts": 1710000000200,
-  "sessionKey": "abc-123",
-  "agentId": "agent-456",
-  "runId": "run-789",
-  "model": "anthropic/claude-sonnet-4-6",
-  "provider": "anthropic",
-  "success": true,
-  "error": null,
-  "errorCode": null,
-  "statusCode": 200,
+  "ts": 1773132343995,
+  "sessionKey": "agent:main:main",
+  "sessionId": "a4fd48e3-...",
+  "agentId": "main",
+  "runId": "418052d6-...",
+  "provider": "ark",
+  "model": "doubao-seed-2.0-code",
   "payload": {
-    "content": [...],
-    "thinking": [...],
-    "stopReason": "end_turn"
+    "assistantTexts": ["Hello! 👋"],
+    "lastAssistant": {
+      "role": "assistant",
+      "content": [{"type": "text", "text": "Hello! 👋"}],
+      "usage": {"input": 100412, "output": 5, "cacheRead": 3384, "cacheWrite": 0, "totalTokens": 103801,
+                "cost": {"input": 0.200824, "output": 0.00004, "cacheRead": 0.001692, "total": 0.202556}},
+      "stopReason": "stop"
+    }
   },
   "usage": {
-    "inputTokens": 15230,
-    "outputTokens": 1024,
-    "cacheCreationTokens": 0,
-    "cacheReadTokens": 12000,
-    "thinkingTokens": 512
-  },
-  "durationMs": 3200
+    "input": 100412,
+    "output": 5,
+    "cacheRead": 3384,
+    "cacheWrite": 0,
+    "total": 103801
+  }
 }
 ```
+
+> **Note**: The SDK does not expose `isPrimary`, `fallbackReason`, `errorCode`, `statusCode`,
+> `maxTokens`, `temperature`, `thinkingBudget`, or separate `thinking` blocks at the plugin
+> hook level. Routing is inferred; thinking analysis uses `lastAssistant.content` blocks.
 
 ## 9. Key Decisions & Trade-offs
 
@@ -611,22 +614,30 @@ large_tool_result_tokens = 5000
 | Capture full payloads by default | Storage is cheap; having the data is invaluable for debugging; redaction handles secrets |
 | Python CLI (not web dashboard) | ClawMetry already provides dashboards; our value is in deep analysis, not real-time monitoring |
 
-## 10. Open Questions
+## 10. Resolved Questions (formerly Open Questions)
 
-1. **llm_input/llm_output payload completeness**: The exact payload structure of these events
-   is not fully documented yet. We need to verify against OpenClaw v2026.3.2+ source code
-   what fields are actually available. The plugin should gracefully handle missing fields.
+1. **llm_input/llm_output payload completeness**: ✅ RESOLVED
+   Verified against OpenClaw v2026.3.2 SDK types (`PluginHookLlmInputEvent`, `PluginHookLlmOutputEvent`).
+   - `llm_input` provides: `runId`, `sessionId`, `provider`, `model`, `systemPrompt` (string),
+     `prompt` (string), `historyMessages` (message array), `imagesCount` (number)
+   - `llm_output` provides: `runId`, `sessionId`, `provider`, `model`, `assistantTexts` (string[]),
+     `lastAssistant` (full message with content blocks + usage), `usage` (`{ input, output, cacheRead, cacheWrite, total }`)
+   - Context (`PluginHookAgentContext`): `agentId`, `sessionKey`, `sessionId`, `channelId`, `trigger`, `runId`
 
-2. **Primary/Fallback signal**: How does the llm_input event indicate whether this is a
-   primary or fallback attempt? Need to check if `isPrimary`/`fallbackReason` fields exist
-   or if we need to infer from model config + event sequence.
+2. **Primary/Fallback signal**: ✅ RESOLVED
+   The SDK does NOT expose `isPrimary` or `fallbackReason` fields. Routing is inferred by comparing
+   the model used in each call against `agents.defaults.model.primary` from the OpenClaw config.
+   The analysis engine's `--primary-model` flag or auto-detection from `~/.openclaw/openclaw.json`
+   handles this.
 
-3. **System prompt structure**: How does OpenClaw structure the system prompt in the API
-   request? Is it a single string or an array of content blocks? Are there delimiters between
-   sections? This affects prompt_order and prompt_compression analyzers.
+3. **System prompt structure**: ✅ RESOLVED
+   The system prompt is delivered as a single string via `evt.systemPrompt`. It contains
+   concatenated sections (CORE, WORKSPACE, TOOL, MEMORY, etc.) with markdown headers as delimiters.
+   The `prompt_order` analyzer uses regex patterns to detect section boundaries.
 
-4. **ContextEngine plugin (v2026.3.7)**: The new pluggable ContextEngine may change how
-   context assembly works. We should ensure compatibility with both legacy and new engines.
+4. **ContextEngine plugin (v2026.3.7)**: ⏳ DEFERRED
+   Not yet tested with the new pluggable ContextEngine. The current implementation should be
+   compatible since it reads the assembled system prompt, not the assembly process itself.
 
 ## 11. References
 

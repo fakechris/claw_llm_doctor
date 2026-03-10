@@ -6,7 +6,7 @@ classification across sessions.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -103,6 +103,10 @@ class RoutingReport:
 
     # Per-session summaries
     session_summaries: list[dict[str, Any]] = field(default_factory=list)
+
+    # Routing timeline & fallback chains
+    timeline: list[dict] = field(default_factory=list)
+    fallback_chains: list[dict] = field(default_factory=list)
 
     @property
     def primary_success_rate(self) -> float:
@@ -210,6 +214,103 @@ def infer_primary(call: LlmCall, primary_model: str | None) -> bool | None:
     return False
 
 
+def build_routing_timeline(
+    sessions: list[Session],
+    primary_model: str | None = None,
+) -> list[dict]:
+    """Build a time-ordered list of routing events across all sessions.
+
+    Each entry contains:
+        timestamp, session_key, model, provider, is_primary (inferred),
+        success, duration_ms, error
+    """
+    timeline: list[dict] = []
+
+    for session in sessions:
+        calls = pair_llm_calls(session)
+        for call in calls:
+            is_primary = call.is_primary
+            if is_primary is None:
+                is_primary = infer_primary(call, primary_model)
+
+            timeline.append(
+                {
+                    "timestamp": call.input_record.ts,
+                    "session_key": session.key,
+                    "run_id": call.input_record.run_id,
+                    "model": call.model or "unknown",
+                    "provider": call.provider or "unknown",
+                    "is_primary": is_primary,
+                    "success": call.success,
+                    "duration_ms": call.duration_ms,
+                    "error": call.error if not call.success else None,
+                }
+            )
+
+    timeline.sort(key=lambda e: e["timestamp"])
+    return timeline
+
+
+def detect_fallback_chains(timeline: list[dict]) -> list[dict]:
+    """Detect cascading fallback chains from the routing timeline.
+
+    A fallback chain is a group of consecutive LLM calls within the same
+    session (and optionally the same runId) where the first call failed and
+    subsequent calls used different models.
+
+    Returns a list of chain dicts, each with:
+        session_key, start_timestamp, calls (list of timeline entries),
+        models_tried (ordered list of distinct models), final_success
+    """
+    chains: list[dict] = []
+
+    # Group timeline entries by (session_key, run_id) preserving order
+    groups: dict[tuple[str, str | None], list[dict]] = defaultdict(list)
+    for entry in timeline:
+        key = (entry["session_key"], entry.get("run_id"))
+        groups[key].append(entry)
+
+    for (session_key, run_id), entries in groups.items():
+        # Walk through entries looking for failure -> retry sequences
+        i = 0
+        while i < len(entries):
+            if not entries[i]["success"]:
+                # Start of a potential chain
+                chain_calls = [entries[i]]
+                j = i + 1
+                while j < len(entries):
+                    # Continue chain if same session and model differs from
+                    # the initial call (cascading to a different model)
+                    if entries[j]["model"] != entries[i]["model"]:
+                        chain_calls.append(entries[j])
+                        if entries[j]["success"]:
+                            break  # chain resolved
+                        j += 1
+                    else:
+                        break
+                if len(chain_calls) > 1:
+                    chains.append(
+                        {
+                            "session_key": session_key,
+                            "run_id": run_id,
+                            "start_timestamp": chain_calls[0]["timestamp"],
+                            "calls": chain_calls,
+                            "models_tried": list(
+                                dict.fromkeys(c["model"] for c in chain_calls)
+                            ),
+                            "final_success": chain_calls[-1]["success"],
+                        }
+                    )
+                    i = j + 1
+                else:
+                    i += 1
+            else:
+                i += 1
+
+    chains.sort(key=lambda c: c["start_timestamp"])
+    return chains
+
+
 def analyze_routing(
     sessions: list[Session],
     primary_model: str | None = None,
@@ -281,5 +382,9 @@ def analyze_routing(
                 "time_range": session.time_range,
             }
         )
+
+    # Build timeline and detect fallback chains
+    report.timeline = build_routing_timeline(sessions, primary_model)
+    report.fallback_chains = detect_fallback_chains(report.timeline)
 
     return report

@@ -252,6 +252,53 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
 
 @main.command()
 @source_options
+def replay(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+    """Replay a session as a human-readable conversation timeline."""
+    from reporters.terminal import print_replay
+
+    if not session_filter:
+        click.echo("Error: --session is required for replay", err=True)
+        sys.exit(1)
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        print_replay(session)
+
+
+@main.command()
+@source_options
+def export(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+    """Export a session's raw records as a JSON array."""
+    import json
+
+    if not session_filter:
+        click.echo("Error: --session is required for export", err=True)
+        sys.exit(1)
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    all_records = []
+    for session in sessions:
+        for rec in session.records:
+            all_records.append(rec.raw)
+
+    # Sort by timestamp
+    all_records.sort(key=lambda r: r.get("ts", 0))
+
+    json_str = json.dumps(all_records, indent=2, ensure_ascii=False)
+
+    if output_path:
+        Path(output_path).write_text(json_str, encoding="utf-8")
+        click.echo(f"Exported {len(all_records)} records to {output_path}")
+    else:
+        click.echo(json_str)
+
+
+@main.command()
+@source_options
 def sessions(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """List all captured sessions."""
     from rich.console import Console

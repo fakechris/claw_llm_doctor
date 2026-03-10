@@ -100,6 +100,31 @@ class ContextReport:
             return 0.0
         return sum(t.utilization for t in self.turns) / len(self.turns)
 
+    def growth_curve(self) -> list[dict]:
+        """Return a list of dicts describing context growth over the session.
+
+        Each entry contains:
+            turn_index, total_tokens, system_tokens, history_tokens,
+            delta (change from previous turn)
+
+        Useful for visualization of context growth.
+        """
+        curve: list[dict] = []
+        prev_total = 0
+        for turn in self.turns:
+            total = turn.total_tokens
+            curve.append(
+                {
+                    "turn_index": turn.turn_index,
+                    "total_tokens": total,
+                    "system_tokens": turn.system_tokens,
+                    "history_tokens": turn.history_tokens,
+                    "delta": total - prev_total,
+                }
+            )
+            prev_total = total
+        return curve
+
 
 # ── Analysis ──────────────────────────────────────────────────────────────
 
