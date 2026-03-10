@@ -90,7 +90,8 @@ def extract_system_text(record: Record) -> str | None:
     if not payload:
         return None
 
-    system = payload.get("system")
+    # SDK field is "systemPrompt"; fall back to "system" for compatibility
+    system = payload.get("systemPrompt") or payload.get("system")
     if isinstance(system, str):
         return system
     if isinstance(system, list):

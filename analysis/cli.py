@@ -62,7 +62,25 @@ def source_options(f):
         default=None,
         help="Output file path (for json/html formats)",
     )(f)
+    f = click.option(
+        "--primary-model",
+        default=None,
+        help="Primary model ID (e.g. ark/doubao-seed-2.0-code) for routing classification",
+    )(f)
     return f
+
+
+def _detect_primary_model() -> str | None:
+    """Try to read the primary model from the OpenClaw config."""
+    config_path = Path.home() / ".openclaw" / "openclaw.json"
+    if not config_path.exists():
+        return None
+    try:
+        import json
+        cfg = json.loads(config_path.read_text())
+        return cfg.get("agents", {}).get("defaults", {}).get("model", {}).get("primary")
+    except Exception:
+        return None
 
 
 def load_records(log_dir, log_file):
@@ -92,21 +110,22 @@ def filter_sessions(sessions, session_filter):
 
 @main.command()
 @source_options
-def routing(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def routing(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 1: Analyze LM routing (Primary/Fallback, success rates, errors)."""
     from analyzers.routing import analyze_routing
     from reporters.terminal import print_routing
 
+    primary_model = primary_model or _detect_primary_model()
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
-    report = analyze_routing(sessions)
+    report = analyze_routing(sessions, primary_model=primary_model)
     print_routing(report)
 
 
 @main.command()
 @source_options
-def context(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def context(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3a: Analyze context window composition and utilization."""
     from analyzers.context import analyze_context
     from reporters.terminal import print_context
@@ -121,7 +140,7 @@ def context(log_dir, log_file, session_filter, token_method, output_format, outp
 
 @main.command(name="prompt-order")
 @source_options
-def prompt_order(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def prompt_order(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3b: Analyze system prompt section ordering."""
     from analyzers.prompt_order import analyze_prompt_order
     from reporters.terminal import print_prompt_order
@@ -136,7 +155,7 @@ def prompt_order(log_dir, log_file, session_filter, token_method, output_format,
 
 @main.command(name="prompt-compression")
 @source_options
-def prompt_compression(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def prompt_compression(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3c: Analyze system prompt compression and content loss."""
     from analyzers.prompt_compression import analyze_compression
     from reporters.terminal import print_compression
@@ -151,7 +170,7 @@ def prompt_compression(log_dir, log_file, session_filter, token_method, output_f
 
 @main.command()
 @source_options
-def thinking(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def thinking(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3d: Analyze thinking process separation and leakage."""
     from analyzers.thinking import analyze_thinking
     from reporters.terminal import print_thinking
@@ -166,7 +185,7 @@ def thinking(log_dir, log_file, session_filter, token_method, output_format, out
 
 @main.command()
 @source_options
-def full(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def full(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Run all analysis layers and generate a complete report."""
     from analyzers.routing import analyze_routing
     from analyzers.context import analyze_context
@@ -177,7 +196,8 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
-    routing_report = analyze_routing(sessions)
+    primary_model = primary_model or _detect_primary_model()
+    routing_report = analyze_routing(sessions, primary_model=primary_model)
 
     # Collect per-session reports
     ctx_reports = []
@@ -232,7 +252,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
 
 @main.command()
 @source_options
-def sessions(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+def sessions(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """List all captured sessions."""
     from rich.console import Console
     from rich.table import Table

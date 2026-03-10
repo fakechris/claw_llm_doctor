@@ -206,21 +206,32 @@ def analyze_thinking(session: Session, token_method: str = "char") -> ThinkingRe
         if not payload:
             continue
 
-        # Extract thinking blocks
-        thinking_raw = payload.get("thinking")
-        content_raw = payload.get("content")
-
+        # Extract thinking and content from the actual SDK shape.
+        # SDK provides: payload.assistantTexts (string[]), payload.lastAssistant
+        # lastAssistant has .content (content block array) with type=thinking and type=text blocks
         thinking_blocks: list[ThinkingBlock] = []
         content_text = ""
 
+        # Try lastAssistant.content first (structured content blocks)
+        last_assistant = payload.get("lastAssistant")
+        content_raw = None
+        if isinstance(last_assistant, dict):
+            content_raw = last_assistant.get("content")
+
+        # Fall back to top-level payload.thinking / payload.content for compatibility
+        thinking_raw = payload.get("thinking")
         if isinstance(thinking_raw, list):
             thinking_blocks = extract_thinking_blocks(thinking_raw, token_method)
+
         if isinstance(content_raw, list):
-            # Also check content blocks for inline thinking
+            # Content blocks may include both thinking and text blocks
             thinking_blocks.extend(extract_thinking_blocks(content_raw, token_method))
             content_text = extract_content_text(content_raw)
-        elif isinstance(content_raw, str):
-            content_text = content_raw
+        elif not content_raw:
+            # Fall back to assistantTexts
+            assistant_texts = payload.get("assistantTexts")
+            if isinstance(assistant_texts, list):
+                content_text = "\n".join(str(t) for t in assistant_texts if t)
 
         thinking_tokens = sum(b.token_count for b in thinking_blocks)
         content_tokens = count_tokens(content_text, token_method)
