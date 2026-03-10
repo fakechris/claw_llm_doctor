@@ -239,11 +239,11 @@ const plugin = {
     });
 
     // -----------------------------------------------------------------
-    // CLI — `openclaw doctor status|tail|stats`
+    // CLI — `openclaw llm-doctor status|tail|stats`
     // -----------------------------------------------------------------
     api.registerCli(
       ({ program }) => registerDoctorCli({ program, cfg }),
-      { commands: ["doctor"] },
+      { commands: ["llm-doctor"] },
     );
   },
 };
