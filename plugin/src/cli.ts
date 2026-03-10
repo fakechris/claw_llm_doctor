@@ -195,7 +195,7 @@ export function registerDoctorCli(params: {
   const { program, cfg } = params;
 
   const root = program
-    .command("doctor")
+    .command("llm-doctor")
     .description("LLM Doctor diagnostic commands");
 
   root
