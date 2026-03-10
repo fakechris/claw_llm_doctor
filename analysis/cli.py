@@ -49,6 +49,19 @@ def source_options(f):
         default="char",
         help="Token counting method",
     )(f)
+    f = click.option(
+        "--format",
+        "output_format",
+        type=click.Choice(["terminal", "json", "html"]),
+        default="terminal",
+        help="Output format",
+    )(f)
+    f = click.option(
+        "--output", "-o",
+        "output_path",
+        default=None,
+        help="Output file path (for json/html formats)",
+    )(f)
     return f
 
 
@@ -79,7 +92,7 @@ def filter_sessions(sessions, session_filter):
 
 @main.command()
 @source_options
-def routing(log_dir, log_file, session_filter, token_method) -> None:
+def routing(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
     """Layer 1: Analyze LM routing (Primary/Fallback, success rates, errors)."""
     from analyzers.routing import analyze_routing
     from reporters.terminal import print_routing
@@ -93,7 +106,7 @@ def routing(log_dir, log_file, session_filter, token_method) -> None:
 
 @main.command()
 @source_options
-def context(log_dir, log_file, session_filter, token_method) -> None:
+def context(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
     """Layer 3a: Analyze context window composition and utilization."""
     from analyzers.context import analyze_context
     from reporters.terminal import print_context
@@ -108,7 +121,7 @@ def context(log_dir, log_file, session_filter, token_method) -> None:
 
 @main.command(name="prompt-order")
 @source_options
-def prompt_order(log_dir, log_file, session_filter, token_method) -> None:
+def prompt_order(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
     """Layer 3b: Analyze system prompt section ordering."""
     from analyzers.prompt_order import analyze_prompt_order
     from reporters.terminal import print_prompt_order
@@ -123,7 +136,7 @@ def prompt_order(log_dir, log_file, session_filter, token_method) -> None:
 
 @main.command(name="prompt-compression")
 @source_options
-def prompt_compression(log_dir, log_file, session_filter, token_method) -> None:
+def prompt_compression(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
     """Layer 3c: Analyze system prompt compression and content loss."""
     from analyzers.prompt_compression import analyze_compression
     from reporters.terminal import print_compression
@@ -138,7 +151,7 @@ def prompt_compression(log_dir, log_file, session_filter, token_method) -> None:
 
 @main.command()
 @source_options
-def thinking(log_dir, log_file, session_filter, token_method) -> None:
+def thinking(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
     """Layer 3d: Analyze thinking process separation and leakage."""
     from analyzers.thinking import analyze_thinking
     from reporters.terminal import print_thinking
@@ -153,40 +166,73 @@ def thinking(log_dir, log_file, session_filter, token_method) -> None:
 
 @main.command()
 @source_options
-def full(log_dir, log_file, session_filter, token_method) -> None:
-    """Run all analysis layers and print a complete report."""
+def full(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
+    """Run all analysis layers and generate a complete report."""
     from analyzers.routing import analyze_routing
     from analyzers.context import analyze_context
     from analyzers.prompt_order import analyze_prompt_order
     from analyzers.prompt_compression import analyze_compression
     from analyzers.thinking import analyze_thinking
-    from reporters.terminal import print_full_report
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     routing_report = analyze_routing(sessions)
 
-    for session in sessions:
-        ctx_report = analyze_context(session, token_method=token_method)
-        order_report = analyze_prompt_order(session)
-        compress_report = analyze_compression(session, token_method=token_method)
-        think_report = analyze_thinking(session, token_method=token_method)
+    # Collect per-session reports
+    ctx_reports = []
+    order_reports = []
+    compress_reports = []
+    think_reports = []
 
-        print_full_report(
+    for session in sessions:
+        ctx_reports.append(analyze_context(session, token_method=token_method))
+        order_reports.append(analyze_prompt_order(session))
+        compress_reports.append(analyze_compression(session, token_method=token_method))
+        think_reports.append(analyze_thinking(session, token_method=token_method))
+
+    if output_format == "json":
+        from reporters.json_report import build_full_json, write_json
+
+        data = build_full_json(
             routing=routing_report,
-            context=ctx_report,
-            prompt_order=order_report,
-            compression=compress_report,
-            thinking=think_report,
+            contexts=ctx_reports,
+            prompt_orders=order_reports,
+            compressions=compress_reports,
+            thinkings=think_reports,
         )
-        # Only print routing once (it's across all sessions)
-        routing_report = None
+        write_json(data, output_path)
+
+    elif output_format == "html":
+        from reporters.html import generate_html, write_html
+
+        html = generate_html(
+            routing=routing_report,
+            contexts=ctx_reports,
+            prompt_orders=order_reports,
+            compressions=compress_reports,
+            thinkings=think_reports,
+        )
+        path = output_path or "report.html"
+        write_html(html, path)
+        click.echo(f"HTML report written to {path}")
+
+    else:
+        from reporters.terminal import print_full_report
+
+        for i, session in enumerate(sessions):
+            print_full_report(
+                routing=routing_report if i == 0 else None,
+                context=ctx_reports[i],
+                prompt_order=order_reports[i],
+                compression=compress_reports[i],
+                thinking=think_reports[i],
+            )
 
 
 @main.command()
 @source_options
-def sessions(log_dir, log_file, session_filter, token_method) -> None:
+def sessions(log_dir, log_file, session_filter, token_method, output_format, output_path) -> None:
     """List all captured sessions."""
     from rich.console import Console
     from rich.table import Table
