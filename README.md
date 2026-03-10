@@ -95,8 +95,21 @@ openclaw plugins info claw-llm-doctor
 # Check logs are being written
 ls ~/.openclaw/logs/llm-doctor/
 
+# Quick status via the plugin CLI
+openclaw llm-doctor status
+
 # Tail live events
 tail -f ~/.openclaw/logs/llm-doctor/llm-doctor-$(date +%Y-%m-%d).jsonl | jq .
+```
+
+### Plugin CLI Commands
+
+The plugin registers commands under `openclaw llm-doctor`:
+
+```bash
+openclaw llm-doctor status   # Output dir, capture settings, log file size, record count
+openclaw llm-doctor tail     # Last 20 records from today's log
+openclaw llm-doctor stats    # Records by type, sessions, models, total duration
 ```
 
 ### Plugin Settings
@@ -166,7 +179,11 @@ Analyzes Primary vs Fallback model routing:
 - Total calls, primary/fallback split, success rates
 - Per-model and per-provider breakdown
 - Error classification (auth_failed, rate_limited, timeout, context_length_exceeded, server_error)
+- Routing timeline with time-ordered view of all LLM calls
+- Fallback chain detection (cascading failures across models)
 - Per-session summary
+
+Use `--primary-model ark/doubao-seed-2.0-code` to specify which model is primary (auto-detected from `~/.openclaw/openclaw.json` if available).
 
 ### Layer 3a: Context composition
 
@@ -181,6 +198,7 @@ Breaks down context window usage per turn:
 - Tool result tokens
 - Thinking block tokens
 - Utilization ratio with health indicator (green/yellow/red)
+- Context growth curve (ASCII bar chart showing token growth per turn)
 - Compaction event detection
 - Large tool result warnings
 
@@ -219,6 +237,25 @@ Analyzes thinking block separation and quality:
 - Leakage detection — thinking patterns in response content ("Let me think...", "I need to...", etc.)
 - Leakage severity rating (none/low/medium/high)
 
+### Session replay
+
+```bash
+claw-doctor replay --session agent:main:main
+```
+
+Renders a human-readable conversation timeline with color-coded events:
+- User prompts (blue), assistant responses (green), tool calls (yellow)
+- Agent lifecycle events (magenta), errors (red)
+- Relative timestamps from session start
+
+### Export raw records
+
+```bash
+claw-doctor export --session agent:main:main -o session.json
+```
+
+Dumps all raw JSONL records for a session as a JSON array, sorted by timestamp.
+
 ### Full report
 
 ```bash
@@ -249,11 +286,11 @@ jq -r 'select(.type=="llm.input") | .model' llm-doctor-*.jsonl | sort | uniq -c
 # Find all errors
 jq 'select(.type=="llm.output" and .success==false)' llm-doctor-*.jsonl
 
-# Get fallback events
-jq 'select(.type=="llm.input" and .isPrimary==false)' llm-doctor-*.jsonl
-
 # Token usage per call
-jq 'select(.type=="llm.output" and .usage) | {model, inputTokens: .usage.inputTokens, outputTokens: .usage.outputTokens}' llm-doctor-*.jsonl
+jq 'select(.type=="llm.output" and .usage) | {model, input: .usage.input, output: .usage.output}' llm-doctor-*.jsonl
+
+# Get all tool calls for a session
+jq 'select(.type=="tool.start" and .sessionKey=="agent:main:main")' llm-doctor-*.jsonl
 ```
 
 ---
@@ -262,15 +299,19 @@ jq 'select(.type=="llm.output" and .usage) | {model, inputTokens: .usage.inputTo
 
 | Type | Trigger | Key Fields |
 |------|---------|------------|
-| `llm.input` | Before LLM call | model, provider, isPrimary, fallbackReason, payload (system/messages/tools) |
-| `llm.output` | After LLM response | success, error, errorCode, payload (content/thinking), usage, durationMs |
+| `llm.input` | Before LLM call | model, provider, payload (systemPrompt, prompt, historyMessages, imagesCount) |
+| `llm.output` | After LLM response | model, provider, payload (assistantTexts, lastAssistant), usage (input, output, cacheRead, cacheWrite, total) |
 | `tool.start` | Before tool execution | toolName, params |
 | `tool.end` | After tool execution | toolName, success, error, durationMs |
-| `agent.start` | Agent begins | promptLength |
+| `agent.start` | Agent begins | prompt |
 | `agent.end` | Agent finishes | success, durationMs, error |
-| `diagnostic.usage` | Per-call metrics | model, contextLimit, inputTokens, outputTokens, costUsd |
+| `model.resolve` | Model routing | model, provider |
 
-All records share: `type`, `ts`, `sessionKey`, `agentId`, `runId`.
+All records share: `type`, `ts`, `sessionKey`, `sessionId`, `agentId`, `runId`.
+
+> **Note**: Primary/Fallback routing is not explicit in the SDK events. The analysis engine
+> infers it by comparing each call's model against `agents.defaults.model.primary` from the
+> OpenClaw config.
 
 ---
 
