@@ -44,6 +44,8 @@ def routing_to_dict(report: RoutingReport) -> dict[str, Any]:
             for code, bucket in report.errors.items()
         },
         "sessions": report.session_summaries,
+        "timeline": report.timeline,
+        "fallback_chains": report.fallback_chains,
     }
 
 
@@ -56,6 +58,7 @@ def context_to_dict(report: ContextReport) -> dict[str, Any]:
         "compaction_events": report.compaction_events,
         "large_payloads": report.large_payloads,
         "turns": [t.as_dict() for t in report.turns],
+        "growth_curve": report.growth_curve(),
     }
 
 

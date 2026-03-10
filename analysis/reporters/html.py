@@ -144,6 +144,34 @@ def render_routing(report: RoutingReport) -> str:
             html += f"<td class='num'>{sess['fallback_triggered']}</td></tr>"
         html += "</table>"
 
+    if report.timeline:
+        html += "<h3>Routing Timeline</h3><table><tr><th>Time</th><th>Session</th>"
+        html += "<th>Model</th><th>Provider</th><th>Role</th><th>OK</th><th>Duration</th></tr>"
+        for e in report.timeline:
+            role = "Primary" if e["is_primary"] is True else ("Fallback" if e["is_primary"] is False else "?")
+            role_cls = "tag-green" if e["is_primary"] is True else ("tag-yellow" if e["is_primary"] is False else "")
+            ok = '<span class="tag tag-green">OK</span>' if e["success"] else '<span class="tag tag-red">FAIL</span>'
+            dur = _esc(f'{e["duration_ms"]}ms') if e["duration_ms"] is not None else "-"
+            html += f"<tr><td>{_esc(e['timestamp'])}</td><td>{_esc(str(e['session_key'])[:20])}</td>"
+            html += f"<td>{_esc(e['model'])}</td><td>{_esc(e['provider'])}</td>"
+            html += f'<td><span class="tag {role_cls}">{role}</span></td>'
+            html += f"<td>{ok}</td><td class='num'>{dur}</td></tr>"
+        html += "</table>"
+
+    if report.fallback_chains:
+        html += f"<h3>Fallback Chains ({len(report.fallback_chains)})</h3>"
+        for i, chain in enumerate(report.fallback_chains, 1):
+            resolved = '<span class="tag tag-green">resolved</span>' if chain["final_success"] else '<span class="tag tag-red">unresolved</span>'
+            models = " → ".join(chain["models_tried"])
+            html += f'<div class="card"><strong>Chain {i}:</strong> {_esc(models)} {resolved}'
+            html += "<table><tr><th class='num'>Step</th><th>Model</th><th>OK</th><th>Error</th><th class='num'>Duration</th></tr>"
+            for step, call in enumerate(chain["calls"], 1):
+                ok = '<span class="tag tag-green">OK</span>' if call["success"] else '<span class="tag tag-red">FAIL</span>'
+                dur = _esc(f'{call["duration_ms"]}ms') if call["duration_ms"] is not None else "-"
+                err = _esc((call.get("error") or "")[:60])
+                html += f"<tr><td class='num'>{step}</td><td>{_esc(call['model'])}</td><td>{ok}</td><td>{err}</td><td class='num'>{dur}</td></tr>"
+            html += "</table></div>"
+
     return html
 
 
@@ -175,6 +203,20 @@ def render_context(report: ContextReport) -> str:
             html += f"<td class='num'>{pct(t.utilization)}</td>"
             html += f"<td>{health_badge(t.health)}</td></tr>"
         html += "</table>"
+
+    curve = report.growth_curve()
+    if curve:
+        max_tok = max((pt["total_tokens"] for pt in curve), default=1) or 1
+        html += "<h3>Context Growth</h3>"
+        for pt in curve:
+            w = int((pt["total_tokens"] / max_tok) * 100)
+            delta = pt["delta"]
+            delta_color = "var(--green)" if delta >= 0 else "var(--red)"
+            delta_str = f"+{delta}" if delta >= 0 else str(delta)
+            html += f'<div class="sim-bar"><span class="idx">T{pt["turn_index"]}</span>'
+            html += f'<div class="bar-container"><div class="bar-fill" style="width:{w}%;background:var(--accent)"></div></div>'
+            html += f'<span>{format_tokens(pt["total_tokens"])}</span>'
+            html += f'<span style="color:{delta_color}">{delta_str}</span></div>'
 
     return html
 
@@ -328,4 +370,9 @@ def write_html(html: str, output: str) -> None:
 
 def _esc(s: Any) -> str:
     """Escape HTML special characters."""
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return (str(s)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#x27;"))

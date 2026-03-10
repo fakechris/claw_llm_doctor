@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -72,15 +73,18 @@ def source_options(f):
 
 def _detect_primary_model() -> str | None:
     """Try to read the primary model from the OpenClaw config."""
-    config_path = Path.home() / ".openclaw" / "openclaw.json"
-    if not config_path.exists():
-        return None
-    try:
-        import json
-        cfg = json.loads(config_path.read_text())
-        return cfg.get("agents", {}).get("defaults", {}).get("model", {}).get("primary")
-    except Exception:
-        return None
+    for name in ("openclaw.json", "config.json"):
+        config_path = Path.home() / ".openclaw" / name
+        if not config_path.exists():
+            continue
+        try:
+            cfg = json.loads(config_path.read_text())
+            primary = cfg.get("agents", {}).get("defaults", {}).get("model", {}).get("primary")
+            if primary:
+                return primary
+        except Exception:
+            continue
+    return None
 
 
 def load_records(log_dir, log_file):
@@ -248,6 +252,51 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
                 compression=compress_reports[i],
                 thinking=think_reports[i],
             )
+
+
+@main.command()
+@source_options
+def replay(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+    """Replay a session as a human-readable conversation timeline."""
+    from reporters.terminal import print_replay
+
+    if not session_filter:
+        click.echo("Error: --session is required for replay", err=True)
+        sys.exit(1)
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        print_replay(session)
+
+
+@main.command()
+@source_options
+def export(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+    """Export a session's raw records as a JSON array."""
+    if not session_filter:
+        click.echo("Error: --session is required for export", err=True)
+        sys.exit(1)
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    all_records = []
+    for session in sessions:
+        for rec in session.records:
+            all_records.append(rec.raw)
+
+    # Sort by timestamp
+    all_records.sort(key=lambda r: r.get("ts", 0))
+
+    json_str = json.dumps(all_records, indent=2, ensure_ascii=False)
+
+    if output_path:
+        Path(output_path).write_text(json_str, encoding="utf-8")
+        click.echo(f"Exported {len(all_records)} records to {output_path}")
+    else:
+        click.echo(json_str)
 
 
 @main.command()

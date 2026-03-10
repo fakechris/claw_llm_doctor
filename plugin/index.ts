@@ -3,6 +3,7 @@ import { onDiagnosticEvent } from "openclaw/plugin-sdk";
 import { JsonlWriter } from "./src/writer.js";
 import { DEFAULT_CONFIG } from "./src/types.js";
 import type { PluginConfig } from "./src/types.js";
+import { registerDoctorCli } from "./src/cli.js";
 
 const plugin = {
   id: "claw-llm-doctor",
@@ -18,6 +19,14 @@ const plugin = {
     const writer = new JsonlWriter(cfg);
 
     api.logger.info(`llm-doctor: writing to ${cfg.outputDir}`);
+
+    // Track llm_input timestamps for duration calculation in llm_output.
+    // Key: "runId:sessionId" → timestamp
+    // Entries are cleaned up on llm_output, plus a periodic sweep for
+    // orphans (e.g. network failures where llm_output never fires).
+    const inputTimestamps = new Map<string, number>();
+    const INPUT_TS_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+    let inputTsSweepTimer: ReturnType<typeof setInterval> | undefined;
 
     // -----------------------------------------------------------------
     // before_model_resolve — capture model routing decisions
@@ -41,9 +50,14 @@ const plugin = {
     // llm_input — fires when the full request is about to go to the LLM
     // -----------------------------------------------------------------
     api.on("llm_input", (evt, ctx) => {
+      const now = Date.now();
+      // Store timestamp for duration calculation in the paired llm_output
+      const pairKey = `${evt.runId}:${ctx.sessionId}`;
+      inputTimestamps.set(pairKey, now);
+
       writer.write({
         type: "llm.input",
-        ts: Date.now(),
+        ts: now,
         sessionKey: ctx.sessionKey,
         sessionId: ctx.sessionId,
         agentId: ctx.agentId,
@@ -67,9 +81,24 @@ const plugin = {
     // llm_output — fires when the LLM response is received
     // -----------------------------------------------------------------
     api.on("llm_output", (evt, ctx) => {
+      // Infer success: the SDK doesn't provide an explicit success flag.
+      // If lastAssistant has non-empty content, the call succeeded.
+      // Note: empty arrays are truthy in JS, so we must check .length.
+      const la = evt.lastAssistant as Record<string, unknown> | undefined;
+      const laContent = Array.isArray(la?.content) ? la.content as unknown[] : undefined;
+      const hasContent = (laContent && laContent.length > 0) || (evt.assistantTexts && evt.assistantTexts.length > 0);
+      const stopReason = la?.stopReason as string | undefined;
+
+      // Calculate duration from paired llm_input timestamp
+      const pairKey = `${evt.runId}:${ctx.sessionId}`;
+      const inputTs = inputTimestamps.get(pairKey);
+      const now = Date.now();
+      const durationMs = inputTs != null ? now - inputTs : undefined;
+      if (inputTs != null) inputTimestamps.delete(pairKey);
+
       writer.write({
         type: "llm.output",
-        ts: Date.now(),
+        ts: now,
         sessionKey: ctx.sessionKey,
         sessionId: ctx.sessionId,
         agentId: ctx.agentId,
@@ -78,6 +107,9 @@ const plugin = {
         trigger: ctx.trigger,
         provider: evt.provider,
         model: evt.model,
+        success: !!hasContent,
+        durationMs,
+        stopReason,
         payload: cfg.capturePayloads
           ? {
               assistantTexts: evt.assistantTexts,
@@ -229,13 +261,30 @@ const plugin = {
     api.registerService({
       id: "llm-doctor-writer",
       start() {
+        // Sweep orphaned inputTimestamps every 5 minutes
+        inputTsSweepTimer = setInterval(() => {
+          const cutoff = Date.now() - INPUT_TS_MAX_AGE_MS;
+          for (const [key, ts] of inputTimestamps) {
+            if (ts < cutoff) inputTimestamps.delete(key);
+          }
+        }, 5 * 60 * 1000);
         api.logger.info("llm-doctor: service started");
       },
       stop() {
+        if (inputTsSweepTimer) clearInterval(inputTsSweepTimer);
+        inputTimestamps.clear();
         unsubDiag();
         api.logger.info("llm-doctor: service stopped");
       },
     });
+
+    // -----------------------------------------------------------------
+    // CLI — `openclaw llm-doctor status|tail|stats`
+    // -----------------------------------------------------------------
+    api.registerCli(
+      ({ program }) => registerDoctorCli({ program, cfg }),
+      { commands: ["llm-doctor"] },
+    );
   },
 };
 

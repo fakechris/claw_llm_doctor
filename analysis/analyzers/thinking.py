@@ -218,10 +218,16 @@ def analyze_thinking(session: Session, token_method: str = "char") -> ThinkingRe
         if isinstance(last_assistant, dict):
             content_raw = last_assistant.get("content")
 
-        # Fall back to top-level payload.thinking / payload.content for compatibility
+        # Fall back to top-level payload.thinking for compatibility
         thinking_raw = payload.get("thinking")
         if isinstance(thinking_raw, list):
             thinking_blocks = extract_thinking_blocks(thinking_raw, token_method)
+
+        # Also try legacy payload.content (pre-SDK-alignment logs)
+        if not content_raw:
+            legacy_content = payload.get("content")
+            if isinstance(legacy_content, list):
+                content_raw = legacy_content
 
         if isinstance(content_raw, list):
             # Content blocks may include both thinking and text blocks
