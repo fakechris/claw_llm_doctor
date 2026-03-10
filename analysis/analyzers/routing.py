@@ -195,8 +195,31 @@ def classify_error(call: LlmCall) -> str:
     return "unknown"
 
 
-def analyze_routing(sessions: list[Session]) -> RoutingReport:
-    """Run full routing analysis across all sessions."""
+def infer_primary(call: LlmCall, primary_model: str | None) -> bool | None:
+    """Infer whether a call used the primary model.
+
+    The OpenClaw SDK doesn't expose isPrimary/fallbackReason. Instead, we
+    compare the model used against the configured primary model.  When
+    *primary_model* is None we cannot infer and return None.
+    """
+    if primary_model is None:
+        return None
+    fq = call.input_record.raw.get("provider", "") + "/" + (call.model or "")
+    if fq == primary_model or call.model == primary_model:
+        return True
+    return False
+
+
+def analyze_routing(
+    sessions: list[Session],
+    primary_model: str | None = None,
+) -> RoutingReport:
+    """Run full routing analysis across all sessions.
+
+    *primary_model* should be the fully-qualified model id from the OpenClaw
+    config (e.g. ``"ark/doubao-seed-2.0-code"``).  When provided, routing
+    classification will infer primary vs fallback.
+    """
     report = RoutingReport()
 
     for session in sessions:
@@ -213,8 +236,11 @@ def analyze_routing(sessions: list[Session]) -> RoutingReport:
             report.calls_by_model[model] += 1
             report.calls_by_provider[provider] += 1
 
-            # Routing classification
+            # Routing classification — try explicit field first, then infer
             is_primary = call.is_primary
+            if is_primary is None:
+                is_primary = infer_primary(call, primary_model)
+
             if is_primary is True:
                 report.primary_calls += 1
             elif is_primary is False:

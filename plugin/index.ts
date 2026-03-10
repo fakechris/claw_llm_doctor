@@ -4,11 +4,11 @@ import { JsonlWriter } from "./src/writer.js";
 import { DEFAULT_CONFIG } from "./src/types.js";
 import type { PluginConfig } from "./src/types.js";
 
-export default {
+const plugin = {
   id: "claw-llm-doctor",
   name: "LLM Doctor",
   description:
-    "Diagnostic interceptor for LLM Provider calls — records all LLM interactions to JSONL",
+    "Diagnostic interceptor — records all LLM interactions to JSONL",
 
   register(api: OpenClawPluginApi) {
     const cfg: PluginConfig = {
@@ -17,168 +17,226 @@ export default {
     };
     const writer = new JsonlWriter(cfg);
 
+    api.logger.info(`llm-doctor: writing to ${cfg.outputDir}`);
+
     // -----------------------------------------------------------------
-    // LLM input — fires when the full request is about to go to the LLM
+    // before_model_resolve — capture model routing decisions
     // -----------------------------------------------------------------
-    api.on("llm_input", (evt: Record<string, unknown>, ctx: Record<string, unknown>) => {
+    api.on("before_model_resolve", (evt, ctx) => {
+      writer.write({
+        type: "model.resolve",
+        ts: Date.now(),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        channelId: ctx.channelId,
+        trigger: ctx.trigger,
+        prompt: cfg.capturePayloads ? evt.prompt : undefined,
+      });
+      // Don't override model — we're just observing
+      return undefined;
+    });
+
+    // -----------------------------------------------------------------
+    // llm_input — fires when the full request is about to go to the LLM
+    // -----------------------------------------------------------------
+    api.on("llm_input", (evt, ctx) => {
       writer.write({
         type: "llm.input",
         ts: Date.now(),
-        sessionKey: str(ctx.sessionKey),
-        agentId: str(ctx.agentId),
-        channelId: str(ctx.channelId),
-        runId: str(ctx.runId),
-        model: str(evt.model),
-        provider: str(evt.provider),
-        isPrimary: evt.isPrimary as boolean | undefined,
-        fallbackReason: str(evt.fallbackReason),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        runId: evt.runId,
+        channelId: ctx.channelId,
+        trigger: ctx.trigger,
+        provider: evt.provider,
+        model: evt.model,
         payload: cfg.capturePayloads
           ? {
-              system: evt.system,
-              messages: evt.messages as unknown[] | undefined,
-              tools: evt.tools as unknown[] | undefined,
-              maxTokens: num(evt.maxTokens),
-              temperature: num(evt.temperature),
-              thinkingBudget: num(evt.thinkingBudget),
+              systemPrompt: evt.systemPrompt,
+              prompt: evt.prompt,
+              historyMessages: evt.historyMessages,
+              imagesCount: evt.imagesCount,
             }
           : undefined,
       });
     });
 
     // -----------------------------------------------------------------
-    // LLM output — fires when the LLM response is received
+    // llm_output — fires when the LLM response is received
     // -----------------------------------------------------------------
-    api.on("llm_output", (evt: Record<string, unknown>, ctx: Record<string, unknown>) => {
-      const usage = evt.usage as Record<string, unknown> | undefined;
+    api.on("llm_output", (evt, ctx) => {
       writer.write({
         type: "llm.output",
         ts: Date.now(),
-        sessionKey: str(ctx.sessionKey),
-        agentId: str(ctx.agentId),
-        runId: str(ctx.runId),
-        model: str(evt.model),
-        provider: str(evt.provider),
-        success: !evt.error,
-        error: str(evt.error),
-        errorCode: str(evt.errorCode),
-        statusCode: num(evt.statusCode),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        runId: evt.runId,
+        channelId: ctx.channelId,
+        trigger: ctx.trigger,
+        provider: evt.provider,
+        model: evt.model,
         payload: cfg.capturePayloads
           ? {
-              content: evt.content as unknown[] | undefined,
-              thinking: evt.thinking as unknown[] | undefined,
-              stopReason: str(evt.stopReason),
+              assistantTexts: evt.assistantTexts,
+              lastAssistant: evt.lastAssistant,
             }
           : undefined,
-        usage: usage
+        usage: evt.usage
           ? {
-              inputTokens: num(usage.inputTokens),
-              outputTokens: num(usage.outputTokens),
-              cacheCreationTokens: num(usage.cacheCreationTokens),
-              cacheReadTokens: num(usage.cacheReadTokens),
-              thinkingTokens: num(usage.thinkingTokens),
+              input: evt.usage.input,
+              output: evt.usage.output,
+              cacheRead: evt.usage.cacheRead,
+              cacheWrite: evt.usage.cacheWrite,
+              total: evt.usage.total,
             }
           : undefined,
-        durationMs: num(evt.durationMs),
       });
     });
 
     // -----------------------------------------------------------------
     // Tool calls
     // -----------------------------------------------------------------
-    api.on("before_tool_call", (evt: Record<string, unknown>, ctx: Record<string, unknown>) => {
+    api.on("before_tool_call", (evt, ctx) => {
       writer.write({
         type: "tool.start",
         ts: Date.now(),
-        sessionKey: str(ctx.sessionKey),
-        agentId: str(ctx.agentId),
-        runId: str(ctx.runId),
-        toolName: str(evt.toolName) ?? "unknown",
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        runId: ctx.runId ?? evt.runId,
+        toolName: evt.toolName,
+        toolCallId: evt.toolCallId,
         params: cfg.capturePayloads ? evt.params : undefined,
       });
+      return undefined;
     });
 
-    api.on("after_tool_call", (evt: Record<string, unknown>, ctx: Record<string, unknown>) => {
+    api.on("after_tool_call", (evt, ctx) => {
       writer.write({
         type: "tool.end",
         ts: Date.now(),
-        sessionKey: str(ctx.sessionKey),
-        agentId: str(ctx.agentId),
-        runId: str(ctx.runId),
-        toolName: str(evt.toolName) ?? "unknown",
-        durationMs: num(evt.durationMs),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        runId: ctx.runId ?? evt.runId,
+        toolName: evt.toolName,
+        toolCallId: evt.toolCallId,
+        durationMs: evt.durationMs,
         success: !evt.error,
-        error: str(evt.error),
+        error: evt.error,
       });
     });
 
     // -----------------------------------------------------------------
     // Agent lifecycle
     // -----------------------------------------------------------------
-    api.on("before_agent_start", (evt: Record<string, unknown>, ctx: Record<string, unknown>) => {
-      const prompt = evt.prompt;
+    api.on("before_agent_start", (evt, ctx) => {
       writer.write({
         type: "agent.start",
         ts: Date.now(),
-        sessionKey: str(ctx.sessionKey),
-        agentId: str(ctx.agentId),
-        runId: str(ctx.runId),
-        promptLength: typeof prompt === "string" ? prompt.length : undefined,
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        channelId: ctx.channelId,
+        trigger: ctx.trigger,
+        prompt: cfg.capturePayloads ? evt.prompt : undefined,
+        messageCount: evt.messages?.length,
       });
+      return undefined;
     });
 
-    api.on("agent_end", (evt: Record<string, unknown>, ctx: Record<string, unknown>) => {
+    api.on("agent_end", (evt, ctx) => {
       writer.write({
         type: "agent.end",
         ts: Date.now(),
-        sessionKey: str(ctx.sessionKey),
-        agentId: str(ctx.agentId),
-        runId: str(ctx.runId),
-        success: (evt.success as boolean) ?? true,
-        durationMs: num(evt.durationMs),
-        error: str(evt.error),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        channelId: ctx.channelId,
+        trigger: ctx.trigger,
+        success: evt.success,
+        durationMs: evt.durationMs,
+        error: evt.error,
+        messageCount: evt.messages?.length,
       });
     });
 
     // -----------------------------------------------------------------
-    // Diagnostic: model.usage — token/cost metrics
+    // Compaction events
     // -----------------------------------------------------------------
-    const unsubscribe = onDiagnosticEvent((diag: Record<string, unknown>) => {
+    api.on("before_compaction", (evt, ctx) => {
+      writer.write({
+        type: "compaction.before",
+        ts: Date.now(),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        messageCount: evt.messageCount,
+        compactingCount: evt.compactingCount,
+        tokenCount: evt.tokenCount,
+        sessionFile: evt.sessionFile,
+      });
+    });
+
+    api.on("after_compaction", (evt, ctx) => {
+      writer.write({
+        type: "compaction.after",
+        ts: Date.now(),
+        sessionKey: ctx.sessionKey,
+        sessionId: ctx.sessionId,
+        agentId: ctx.agentId,
+        messageCount: evt.messageCount,
+        compactedCount: evt.compactedCount,
+        tokenCount: evt.tokenCount,
+        sessionFile: evt.sessionFile,
+      });
+    });
+
+    // -----------------------------------------------------------------
+    // Diagnostic: model.usage — token/cost metrics from the runtime
+    // -----------------------------------------------------------------
+    const unsubDiag = onDiagnosticEvent((diag) => {
       if (diag.type !== "model.usage") return;
+      const evt = diag as Record<string, unknown>;
+      const usage = (evt.usage ?? {}) as Record<string, unknown>;
+      const context = (evt.context ?? {}) as Record<string, unknown>;
       writer.write({
         type: "diagnostic.usage",
         ts: Date.now(),
-        sessionKey: str(diag.sessionKey),
-        agentId: str(diag.agentId),
-        runId: str(diag.runId),
-        model: str(diag.model),
-        provider: str(diag.provider),
-        contextLimit: num(diag.contextLimit),
-        inputTokens: num(diag.inputTokens),
-        outputTokens: num(diag.outputTokens),
-        cacheCreationTokens: num(diag.cacheCreationTokens),
-        cacheReadTokens: num(diag.cacheReadTokens),
-        costUsd: num(diag.costUsd),
+        sessionKey: evt.sessionKey as string | undefined,
+        sessionId: evt.sessionId as string | undefined,
+        model: evt.model as string | undefined,
+        provider: evt.provider as string | undefined,
+        channel: evt.channel as string | undefined,
+        contextLimit: context.limit as number | undefined,
+        contextUsed: context.used as number | undefined,
+        inputTokens: usage.input as number | undefined,
+        outputTokens: usage.output as number | undefined,
+        cacheReadTokens: usage.cacheRead as number | undefined,
+        cacheWriteTokens: usage.cacheWrite as number | undefined,
+        totalTokens: usage.total as number | undefined,
+        costUsd: evt.costUsd as number | undefined,
+        durationMs: evt.durationMs as number | undefined,
       });
     });
 
-    // Register a service so the Gateway can cleanly stop us
+    // -----------------------------------------------------------------
+    // Service lifecycle — clean shutdown
+    // -----------------------------------------------------------------
     api.registerService({
       id: "llm-doctor-writer",
-      start() {},
+      start() {
+        api.logger.info("llm-doctor: service started");
+      },
       stop() {
-        unsubscribe();
+        unsubDiag();
+        api.logger.info("llm-doctor: service stopped");
       },
     });
   },
 };
 
-// ---------------------------------------------------------------------------
-// Helpers — safely extract typed values from untyped event payloads
-// ---------------------------------------------------------------------------
-function str(v: unknown): string | undefined {
-  return typeof v === "string" ? v : undefined;
-}
-
-function num(v: unknown): number | undefined {
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
+export default plugin;
