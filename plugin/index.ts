@@ -3,6 +3,7 @@ import { onDiagnosticEvent } from "openclaw/plugin-sdk";
 import { JsonlWriter } from "./src/writer.js";
 import { DEFAULT_CONFIG } from "./src/types.js";
 import type { PluginConfig } from "./src/types.js";
+import { registerDoctorCli } from "./src/cli.js";
 
 const plugin = {
   id: "claw-llm-doctor",
@@ -236,6 +237,14 @@ const plugin = {
         api.logger.info("llm-doctor: service stopped");
       },
     });
+
+    // -----------------------------------------------------------------
+    // CLI — `openclaw doctor status|tail|stats`
+    // -----------------------------------------------------------------
+    api.registerCli(
+      ({ program }) => registerDoctorCli({ program, cfg }),
+      { commands: ["doctor"] },
+    );
   },
 };
 
