@@ -20,65 +20,69 @@ export const DEFAULT_CONFIG: PluginConfig = {
 
 // ---------------------------------------------------------------------------
 // JSONL record types — written to disk by the plugin
+//
+// Field names align with the actual OpenClaw Plugin SDK hook payloads
+// (PluginHookLlmInputEvent, PluginHookLlmOutputEvent, etc.)
 // ---------------------------------------------------------------------------
 
 export interface BaseRecord {
   type: string;
   ts: number;
   sessionKey?: string;
+  sessionId?: string;
   agentId?: string;
   runId?: string;
+  channelId?: string;
+  trigger?: string;
 }
 
 export interface LlmInputRecord extends BaseRecord {
   type: "llm.input";
-  channelId?: string;
-  model?: string;
   provider?: string;
-  isPrimary?: boolean;
-  fallbackReason?: string;
+  model?: string;
   payload?: {
-    system?: unknown;
-    messages?: unknown[];
-    tools?: unknown[];
-    maxTokens?: number;
-    temperature?: number;
-    thinkingBudget?: number;
+    systemPrompt?: string;
+    prompt?: string;
+    historyMessages?: unknown[];
+    imagesCount?: number;
   };
 }
 
 export interface LlmOutputRecord extends BaseRecord {
   type: "llm.output";
-  model?: string;
   provider?: string;
-  success: boolean;
-  error?: string;
-  errorCode?: string;
-  statusCode?: number;
+  model?: string;
   payload?: {
-    content?: unknown[];
-    thinking?: unknown[];
-    stopReason?: string;
+    assistantTexts?: string[];
+    lastAssistant?: unknown;
   };
   usage?: {
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheCreationTokens?: number;
-    cacheReadTokens?: number;
-    thinkingTokens?: number;
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
   };
-  durationMs?: number;
+}
+
+export interface ModelResolveRecord extends BaseRecord {
+  type: "model.resolve";
+  prompt?: string;
+  modelOverride?: string;
+  providerOverride?: string;
 }
 
 export interface ToolStartRecord extends BaseRecord {
   type: "tool.start";
   toolName: string;
+  toolCallId?: string;
   params?: unknown;
 }
 
 export interface ToolEndRecord extends BaseRecord {
   type: "tool.end";
   toolName: string;
+  toolCallId?: string;
   durationMs?: number;
   success: boolean;
   error?: string;
@@ -86,7 +90,8 @@ export interface ToolEndRecord extends BaseRecord {
 
 export interface AgentStartRecord extends BaseRecord {
   type: "agent.start";
-  promptLength?: number;
+  prompt?: string;
+  messageCount?: number;
 }
 
 export interface AgentEndRecord extends BaseRecord {
@@ -94,25 +99,41 @@ export interface AgentEndRecord extends BaseRecord {
   success: boolean;
   durationMs?: number;
   error?: string;
+  messageCount?: number;
+}
+
+export interface CompactionRecord extends BaseRecord {
+  type: "compaction.before" | "compaction.after";
+  messageCount?: number;
+  compactingCount?: number;
+  compactedCount?: number;
+  tokenCount?: number;
+  sessionFile?: string;
 }
 
 export interface DiagnosticUsageRecord extends BaseRecord {
   type: "diagnostic.usage";
   model?: string;
   provider?: string;
+  channel?: string;
   contextLimit?: number;
+  contextUsed?: number;
   inputTokens?: number;
   outputTokens?: number;
-  cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  totalTokens?: number;
   costUsd?: number;
+  durationMs?: number;
 }
 
 export type DoctorRecord =
   | LlmInputRecord
   | LlmOutputRecord
+  | ModelResolveRecord
   | ToolStartRecord
   | ToolEndRecord
   | AgentStartRecord
   | AgentEndRecord
+  | CompactionRecord
   | DiagnosticUsageRecord;

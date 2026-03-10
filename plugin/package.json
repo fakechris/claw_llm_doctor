@@ -4,12 +4,16 @@
   "description": "OpenClaw plugin — diagnostic interceptor for LLM Provider calls",
   "type": "module",
   "main": "index.ts",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts"
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.3.2"
+    "openclaw": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

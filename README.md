@@ -31,19 +31,25 @@ Diagnostic tool for OpenClaw that intercepts, records, and analyzes all LLM Prov
 git clone https://github.com/fakechris/claw_llm_doctor.git
 cd claw_llm_doctor/plugin
 
-# Install as an OpenClaw plugin
-openclaw plugins install ./
+# Copy to extensions and install dependencies
+cp -r . ~/.openclaw/extensions/claw-llm-doctor
+cd ~/.openclaw/extensions/claw-llm-doctor
+npm install
 ```
 
-### Install manually
+### Development setup
 
 ```bash
-# Copy plugin to extensions directory
+# For active development, copy and install deps, then sync changes as needed
 cp -r plugin ~/.openclaw/extensions/claw-llm-doctor
+cd ~/.openclaw/extensions/claw-llm-doctor && npm install
 
-# Or symlink for development
-ln -s "$(pwd)/plugin" ~/.openclaw/extensions/claw-llm-doctor
+# After making changes in plugin/, sync to extensions (preserves node_modules)
+rsync -av --exclude node_modules --exclude package-lock.json plugin/ ~/.openclaw/extensions/claw-llm-doctor/
 ```
+
+> **Note**: A plain symlink won't work because `npm install` is needed in the
+> extensions directory to resolve the `openclaw` peer dependency.
 
 ### Configure
 
@@ -71,7 +77,17 @@ Add to `~/.openclaw/config.json`:
 
 ### Restart Gateway
 
-Restart the OpenClaw Gateway to load the plugin. On macOS, restart via the menu bar app. The plugin writes logs to `~/.openclaw/logs/llm-doctor/llm-doctor-YYYY-MM-DD.jsonl`.
+```bash
+openclaw daemon restart
+```
+
+The plugin writes logs to `~/.openclaw/logs/llm-doctor/llm-doctor-YYYY-MM-DD.jsonl`.
+Verify the plugin loaded:
+
+```bash
+openclaw plugins list        # should show LLM Doctor as "loaded"
+openclaw plugins info claw-llm-doctor
+```
 
 ### Verify
 

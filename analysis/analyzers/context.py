@@ -143,18 +143,18 @@ def analyze_composition(
     if not payload:
         return comp
 
-    # System prompt
-    system = payload.get("system")
+    # System prompt (SDK field: systemPrompt)
+    system = payload.get("systemPrompt") or payload.get("system")
     if system:
         comp.system_tokens = count_tokens(system, token_method)
 
-    # Tool definitions
+    # Tool definitions (if present)
     tools = payload.get("tools")
     if tools:
         comp.tool_def_tokens = count_tokens(tools, token_method)
 
-    # Messages
-    messages = payload.get("messages")
+    # History messages (SDK field: historyMessages)
+    messages = payload.get("historyMessages") or payload.get("messages")
     if isinstance(messages, list):
         for msg in messages:
             if not isinstance(msg, dict):
@@ -171,6 +171,17 @@ def analyze_composition(
                 comp.image_tokens += tokens
             else:
                 comp.history_tokens += tokens
+
+    # Current turn prompt (SDK field: prompt)
+    prompt = payload.get("prompt")
+    if prompt:
+        comp.history_tokens += count_tokens(prompt, token_method)
+
+    # Images count (SDK field: imagesCount) — estimate tokens
+    images_count = payload.get("imagesCount", 0)
+    if images_count:
+        # Rough estimate: ~1000 tokens per image
+        comp.image_tokens += images_count * 1000
 
     return comp
 
