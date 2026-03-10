@@ -1,0 +1,259 @@
+"""Layer 1: LM Routing Analysis.
+
+Analyzes Primary vs Fallback model call patterns, success rates, and error
+classification across sessions.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import Any
+
+from loader import Record, Session
+
+
+# ── Result types ──────────────────────────────────────────────────────────
+
+
+@dataclass
+class LlmCall:
+    """A paired llm.input -> llm.output representing one LLM round-trip."""
+
+    input_record: Record
+    output_record: Record | None = None
+
+    @property
+    def model(self) -> str | None:
+        return self.input_record.model
+
+    @property
+    def provider(self) -> str | None:
+        return self.input_record.provider
+
+    @property
+    def is_primary(self) -> bool | None:
+        return self.input_record.is_primary
+
+    @property
+    def fallback_reason(self) -> str | None:
+        return self.input_record.fallback_reason
+
+    @property
+    def success(self) -> bool:
+        if self.output_record is None:
+            return False
+        return self.output_record.success
+
+    @property
+    def error(self) -> str | None:
+        if self.output_record is None:
+            return "no_response"
+        return self.output_record.error
+
+    @property
+    def error_code(self) -> str | None:
+        if self.output_record is None:
+            return "no_response"
+        return self.output_record.error_code
+
+    @property
+    def duration_ms(self) -> int | None:
+        if self.output_record:
+            return self.output_record.duration_ms
+        return None
+
+
+@dataclass
+class ErrorBucket:
+    """Aggregated error info for a specific error category."""
+
+    code: str
+    count: int = 0
+    examples: list[str] = field(default_factory=list)
+    models: list[str] = field(default_factory=list)
+
+    def add(self, error_msg: str | None, model: str | None) -> None:
+        self.count += 1
+        if error_msg and len(self.examples) < 3:
+            self.examples.append(error_msg[:200])
+        if model and model not in self.models:
+            self.models.append(model)
+
+
+@dataclass
+class RoutingReport:
+    """Complete routing analysis report."""
+
+    total_calls: int = 0
+    primary_calls: int = 0
+    fallback_calls: int = 0
+    unknown_routing: int = 0
+
+    primary_success: int = 0
+    primary_failure: int = 0
+    fallback_success: int = 0
+    fallback_failure: int = 0
+
+    errors: dict[str, ErrorBucket] = field(default_factory=dict)
+    calls_by_model: Counter = field(default_factory=Counter)
+    success_by_model: Counter = field(default_factory=Counter)
+    failure_by_model: Counter = field(default_factory=Counter)
+    calls_by_provider: Counter = field(default_factory=Counter)
+
+    # Per-session summaries
+    session_summaries: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def primary_success_rate(self) -> float:
+        if self.primary_calls == 0:
+            return 0.0
+        return self.primary_success / self.primary_calls
+
+    @property
+    def fallback_success_rate(self) -> float:
+        if self.fallback_calls == 0:
+            return 0.0
+        return self.fallback_success / self.fallback_calls
+
+    @property
+    def overall_success_rate(self) -> float:
+        if self.total_calls == 0:
+            return 0.0
+        return (self.primary_success + self.fallback_success) / self.total_calls
+
+    @property
+    def fallback_trigger_rate(self) -> float:
+        if self.total_calls == 0:
+            return 0.0
+        return self.fallback_calls / self.total_calls
+
+
+# ── Analysis ──────────────────────────────────────────────────────────────
+
+
+def pair_llm_calls(session: Session) -> list[LlmCall]:
+    """Pair llm.input records with their corresponding llm.output records.
+
+    Pairing heuristic: match by runId, or by sequential ordering within the
+    same session.
+    """
+    inputs = list(session.llm_inputs)
+    outputs = list(session.llm_outputs)
+
+    # Index outputs by runId for fast lookup
+    output_by_run: dict[str, Record] = {}
+    unmatched_outputs: list[Record] = []
+    for o in outputs:
+        if o.run_id:
+            output_by_run[o.run_id] = o
+        else:
+            unmatched_outputs.append(o)
+
+    calls: list[LlmCall] = []
+    remaining_outputs = list(unmatched_outputs)
+
+    for inp in inputs:
+        # Try matching by runId first
+        if inp.run_id and inp.run_id in output_by_run:
+            calls.append(LlmCall(input_record=inp, output_record=output_by_run.pop(inp.run_id)))
+            continue
+
+        # Fall back to sequential matching by timestamp
+        matched = None
+        for i, out in enumerate(remaining_outputs):
+            if out.ts >= inp.ts:
+                matched = remaining_outputs.pop(i)
+                break
+        calls.append(LlmCall(input_record=inp, output_record=matched))
+
+    return calls
+
+
+def classify_error(call: LlmCall) -> str:
+    """Classify the error category for a failed LLM call."""
+    code = call.error_code
+    if code:
+        return code
+
+    error = call.error or ""
+    lower = error.lower()
+
+    if any(kw in lower for kw in ("auth", "api key", "unauthorized", "403", "401")):
+        return "auth_failed"
+    if any(kw in lower for kw in ("rate limit", "429", "throttle", "quota")):
+        return "rate_limited"
+    if any(kw in lower for kw in ("timeout", "timed out", "deadline")):
+        return "timeout"
+    if any(kw in lower for kw in ("context_length", "too many tokens", "max tokens")):
+        return "context_length_exceeded"
+    if any(kw in lower for kw in ("500", "502", "503", "504", "server error", "internal error")):
+        return "server_error"
+    if error == "no_response":
+        return "no_response"
+
+    return "unknown"
+
+
+def analyze_routing(sessions: list[Session]) -> RoutingReport:
+    """Run full routing analysis across all sessions."""
+    report = RoutingReport()
+
+    for session in sessions:
+        calls = pair_llm_calls(session)
+        session_total = len(calls)
+        session_success = 0
+        session_fallback = 0
+
+        for call in calls:
+            report.total_calls += 1
+
+            model = call.model or "unknown"
+            provider = call.provider or "unknown"
+            report.calls_by_model[model] += 1
+            report.calls_by_provider[provider] += 1
+
+            # Routing classification
+            is_primary = call.is_primary
+            if is_primary is True:
+                report.primary_calls += 1
+            elif is_primary is False:
+                report.fallback_calls += 1
+                session_fallback += 1
+            else:
+                report.unknown_routing += 1
+
+            # Success/failure
+            if call.success:
+                session_success += 1
+                if is_primary is True:
+                    report.primary_success += 1
+                elif is_primary is False:
+                    report.fallback_success += 1
+                report.success_by_model[model] += 1
+            else:
+                if is_primary is True:
+                    report.primary_failure += 1
+                elif is_primary is False:
+                    report.fallback_failure += 1
+                report.failure_by_model[model] += 1
+
+                # Error classification
+                err_code = classify_error(call)
+                if err_code not in report.errors:
+                    report.errors[err_code] = ErrorBucket(code=err_code)
+                report.errors[err_code].add(call.error, call.model)
+
+        # Per-session summary
+        report.session_summaries.append(
+            {
+                "session_key": session.key,
+                "total_calls": session_total,
+                "success": session_success,
+                "failure": session_total - session_success,
+                "fallback_triggered": session_fallback,
+                "time_range": session.time_range,
+            }
+        )
+
+    return report

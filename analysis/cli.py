@@ -1,0 +1,224 @@
+"""claw-doctor CLI — analyze OpenClaw LLM diagnostic logs."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import click
+
+from loader import load_file, load_dir, group_sessions
+
+
+DEFAULT_LOG_DIR = Path.home() / ".openclaw" / "logs" / "llm-doctor"
+
+
+@click.group()
+@click.version_option(version="0.1.0")
+def main() -> None:
+    """claw_llm_doctor — diagnose OpenClaw LLM Provider behaviour."""
+
+
+# ── Shared options ────────────────────────────────────────────────────────
+
+
+def source_options(f):
+    """Common options for specifying log source."""
+    f = click.option(
+        "--log-dir",
+        type=click.Path(exists=True, file_okay=False),
+        default=None,
+        help=f"Log directory (default: {DEFAULT_LOG_DIR})",
+    )(f)
+    f = click.option(
+        "--file",
+        "log_file",
+        type=click.Path(exists=True, dir_okay=False),
+        default=None,
+        help="Single JSONL file to analyze",
+    )(f)
+    f = click.option(
+        "--session",
+        "session_filter",
+        default=None,
+        help="Filter to a specific sessionKey",
+    )(f)
+    f = click.option(
+        "--token-method",
+        type=click.Choice(["char", "tiktoken"]),
+        default="char",
+        help="Token counting method",
+    )(f)
+    return f
+
+
+def load_records(log_dir, log_file):
+    """Load records from file or directory."""
+    if log_file:
+        return load_file(log_file)
+    directory = Path(log_dir) if log_dir else DEFAULT_LOG_DIR
+    if not directory.exists():
+        click.echo(f"Error: log directory not found: {directory}", err=True)
+        click.echo(f"Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
+        sys.exit(1)
+    return load_dir(directory)
+
+
+def filter_sessions(sessions, session_filter):
+    """Optionally filter to a specific session."""
+    if session_filter:
+        sessions = [s for s in sessions if session_filter in s.key]
+        if not sessions:
+            click.echo(f"No sessions matching '{session_filter}'", err=True)
+            sys.exit(1)
+    return sessions
+
+
+# ── Commands ──────────────────────────────────────────────────────────────
+
+
+@main.command()
+@source_options
+def routing(log_dir, log_file, session_filter, token_method) -> None:
+    """Layer 1: Analyze LM routing (Primary/Fallback, success rates, errors)."""
+    from analyzers.routing import analyze_routing
+    from reporters.terminal import print_routing
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    report = analyze_routing(sessions)
+    print_routing(report)
+
+
+@main.command()
+@source_options
+def context(log_dir, log_file, session_filter, token_method) -> None:
+    """Layer 3a: Analyze context window composition and utilization."""
+    from analyzers.context import analyze_context
+    from reporters.terminal import print_context
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        report = analyze_context(session, token_method=token_method)
+        print_context(report)
+
+
+@main.command(name="prompt-order")
+@source_options
+def prompt_order(log_dir, log_file, session_filter, token_method) -> None:
+    """Layer 3b: Analyze system prompt section ordering."""
+    from analyzers.prompt_order import analyze_prompt_order
+    from reporters.terminal import print_prompt_order
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        report = analyze_prompt_order(session)
+        print_prompt_order(report)
+
+
+@main.command(name="prompt-compression")
+@source_options
+def prompt_compression(log_dir, log_file, session_filter, token_method) -> None:
+    """Layer 3c: Analyze system prompt compression and content loss."""
+    from analyzers.prompt_compression import analyze_compression
+    from reporters.terminal import print_compression
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        report = analyze_compression(session, token_method=token_method)
+        print_compression(report)
+
+
+@main.command()
+@source_options
+def thinking(log_dir, log_file, session_filter, token_method) -> None:
+    """Layer 3d: Analyze thinking process separation and leakage."""
+    from analyzers.thinking import analyze_thinking
+    from reporters.terminal import print_thinking
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        report = analyze_thinking(session, token_method=token_method)
+        print_thinking(report)
+
+
+@main.command()
+@source_options
+def full(log_dir, log_file, session_filter, token_method) -> None:
+    """Run all analysis layers and print a complete report."""
+    from analyzers.routing import analyze_routing
+    from analyzers.context import analyze_context
+    from analyzers.prompt_order import analyze_prompt_order
+    from analyzers.prompt_compression import analyze_compression
+    from analyzers.thinking import analyze_thinking
+    from reporters.terminal import print_full_report
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    routing_report = analyze_routing(sessions)
+
+    for session in sessions:
+        ctx_report = analyze_context(session, token_method=token_method)
+        order_report = analyze_prompt_order(session)
+        compress_report = analyze_compression(session, token_method=token_method)
+        think_report = analyze_thinking(session, token_method=token_method)
+
+        print_full_report(
+            routing=routing_report,
+            context=ctx_report,
+            prompt_order=order_report,
+            compression=compress_report,
+            thinking=think_report,
+        )
+        # Only print routing once (it's across all sessions)
+        routing_report = None
+
+
+@main.command()
+@source_options
+def sessions(log_dir, log_file, session_filter, token_method) -> None:
+    """List all captured sessions."""
+    from rich.console import Console
+    from rich.table import Table
+    from datetime import datetime
+
+    records = load_records(log_dir, log_file)
+    all_sessions = filter_sessions(group_sessions(records), session_filter)
+
+    console = Console()
+    t = Table(title="Captured Sessions", show_header=True, header_style="bold")
+    t.add_column("Session Key", style="cyan", max_width=30)
+    t.add_column("Records", justify="right")
+    t.add_column("LLM Calls", justify="right")
+    t.add_column("Tools", justify="right")
+    t.add_column("Start", style="dim")
+    t.add_column("End", style="dim")
+
+    for s in all_sessions:
+        start, end = s.time_range
+        start_str = datetime.fromtimestamp(start / 1000).strftime("%Y-%m-%d %H:%M:%S") if start else "?"
+        end_str = datetime.fromtimestamp(end / 1000).strftime("%Y-%m-%d %H:%M:%S") if end else "?"
+        t.add_row(
+            s.key[:30],
+            str(len(s.records)),
+            str(len(s.llm_inputs)),
+            str(len(s.tool_starts)),
+            start_str,
+            end_str,
+        )
+
+    console.print(t)
+
+
+if __name__ == "__main__":
+    main()

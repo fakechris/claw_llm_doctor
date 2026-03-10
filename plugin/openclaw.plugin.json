@@ -1,0 +1,36 @@
+{
+  "id": "claw-llm-doctor",
+  "name": "LLM Doctor",
+  "description": "Diagnostic interceptor for LLM Provider calls — records all LLM interactions to JSONL for analysis",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "outputDir": {
+        "type": "string",
+        "description": "Directory for JSONL log files",
+        "default": "~/.openclaw/logs/llm-doctor"
+      },
+      "capturePayloads": {
+        "type": "boolean",
+        "description": "Capture full request/response payloads",
+        "default": true
+      },
+      "redactSecrets": {
+        "type": "boolean",
+        "description": "Redact API keys and tokens from captured payloads",
+        "default": true
+      },
+      "maxPayloadSize": {
+        "type": "number",
+        "description": "Max payload size to capture in bytes (0 = unlimited)",
+        "default": 0
+      },
+      "rotateMaxSize": {
+        "type": "number",
+        "description": "Log rotation max file size in bytes (default 100MB)",
+        "default": 104857600
+      }
+    },
+    "additionalProperties": false
+  }
+}

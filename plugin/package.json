@@ -1,0 +1,19 @@
+{
+  "name": "claw-llm-doctor",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin — diagnostic interceptor for LLM Provider calls",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "license": "MIT"
+}
