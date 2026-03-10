@@ -476,14 +476,22 @@ def print_replay(session: Session) -> None:
             usage = rec.usage or {}
             in_tok = usage.get("input", "?")
             out_tok = usage.get("output", "?")
-            # Assistant text
+            # Assistant text — extract from structured lastAssistant or fall back to assistantTexts
             payload = rec.payload or {}
-            assistant_text = payload.get("lastAssistant", "")
+            assistant_text = ""
+            la = payload.get("lastAssistant")
+            if isinstance(la, dict):
+                # Extract text from content blocks
+                content_blocks = la.get("content", [])
+                if isinstance(content_blocks, list):
+                    parts = [b.get("text", "") for b in content_blocks
+                             if isinstance(b, dict) and b.get("type") == "text"]
+                    assistant_text = "\n".join(p for p in parts if p)
             if not assistant_text:
                 texts = payload.get("assistantTexts", [])
-                if texts:
+                if isinstance(texts, list) and texts:
                     assistant_text = texts[-1] if isinstance(texts[-1], str) else ""
-            asst_preview = _truncate(str(assistant_text), 200)
+            asst_preview = _truncate(assistant_text, 200)
 
             dur_str = f"  {dur}ms" if dur is not None else ""
             console.print(

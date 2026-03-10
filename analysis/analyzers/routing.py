@@ -255,8 +255,9 @@ def detect_fallback_chains(timeline: list[dict]) -> list[dict]:
     """Detect cascading fallback chains from the routing timeline.
 
     A fallback chain is a group of consecutive LLM calls within the same
-    session (and optionally the same runId) where the first call failed and
-    subsequent calls used different models.
+    session where the first call failed and subsequent calls used different
+    models. We group by session only (not run_id) because fallback retries
+    often use a new run_id.
 
     Returns a list of chain dicts, each with:
         session_key, start_timestamp, calls (list of timeline entries),
@@ -264,13 +265,12 @@ def detect_fallback_chains(timeline: list[dict]) -> list[dict]:
     """
     chains: list[dict] = []
 
-    # Group timeline entries by (session_key, run_id) preserving order
-    groups: dict[tuple[str, str | None], list[dict]] = defaultdict(list)
+    # Group timeline entries by session_key preserving order
+    groups: dict[str, list[dict]] = defaultdict(list)
     for entry in timeline:
-        key = (entry["session_key"], entry.get("run_id"))
-        groups[key].append(entry)
+        groups[entry["session_key"]].append(entry)
 
-    for (session_key, run_id), entries in groups.items():
+    for session_key, entries in groups.items():
         # Walk through entries looking for failure -> retry sequences
         i = 0
         while i < len(entries):
@@ -292,7 +292,6 @@ def detect_fallback_chains(timeline: list[dict]) -> list[dict]:
                     chains.append(
                         {
                             "session_key": session_key,
-                            "run_id": run_id,
                             "start_timestamp": chain_calls[0]["timestamp"],
                             "calls": chain_calls,
                             "models_tried": list(

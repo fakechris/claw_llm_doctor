@@ -12,6 +12,9 @@ from typing import Any
 from loader import Record, Session
 from utils.tokens import count_tokens, format_tokens
 
+# Rough token estimate per image (vision models encode images as ~1k tokens)
+IMAGE_TOKEN_ESTIMATE = 1000
+
 
 # ── Result types ──────────────────────────────────────────────────────────
 
@@ -205,8 +208,7 @@ def analyze_composition(
     # Images count (SDK field: imagesCount) — estimate tokens
     images_count = payload.get("imagesCount", 0)
     if images_count:
-        # Rough estimate: ~1000 tokens per image
-        comp.image_tokens += images_count * 1000
+        comp.image_tokens += images_count * IMAGE_TOKEN_ESTIMATE
 
     return comp
 

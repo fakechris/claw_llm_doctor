@@ -20,6 +20,10 @@ const plugin = {
 
     api.logger.info(`llm-doctor: writing to ${cfg.outputDir}`);
 
+    // Track llm_input timestamps for duration calculation in llm_output.
+    // Key: "runId:sessionId" → timestamp
+    const inputTimestamps = new Map<string, number>();
+
     // -----------------------------------------------------------------
     // before_model_resolve — capture model routing decisions
     // -----------------------------------------------------------------
@@ -42,9 +46,14 @@ const plugin = {
     // llm_input — fires when the full request is about to go to the LLM
     // -----------------------------------------------------------------
     api.on("llm_input", (evt, ctx) => {
+      const now = Date.now();
+      // Store timestamp for duration calculation in the paired llm_output
+      const pairKey = `${evt.runId}:${ctx.sessionId}`;
+      inputTimestamps.set(pairKey, now);
+
       writer.write({
         type: "llm.input",
-        ts: Date.now(),
+        ts: now,
         sessionKey: ctx.sessionKey,
         sessionId: ctx.sessionId,
         agentId: ctx.agentId,
@@ -68,9 +77,22 @@ const plugin = {
     // llm_output — fires when the LLM response is received
     // -----------------------------------------------------------------
     api.on("llm_output", (evt, ctx) => {
+      // Infer success: the SDK doesn't provide an explicit success flag.
+      // If lastAssistant exists and has content, the call succeeded.
+      const la = evt.lastAssistant as Record<string, unknown> | undefined;
+      const hasContent = la?.content || (evt.assistantTexts && evt.assistantTexts.length > 0);
+      const stopReason = la?.stopReason as string | undefined;
+
+      // Calculate duration from paired llm_input timestamp
+      const pairKey = `${evt.runId}:${ctx.sessionId}`;
+      const inputTs = inputTimestamps.get(pairKey);
+      const now = Date.now();
+      const durationMs = inputTs != null ? now - inputTs : undefined;
+      if (inputTs != null) inputTimestamps.delete(pairKey);
+
       writer.write({
         type: "llm.output",
-        ts: Date.now(),
+        ts: now,
         sessionKey: ctx.sessionKey,
         sessionId: ctx.sessionId,
         agentId: ctx.agentId,
@@ -79,6 +101,9 @@ const plugin = {
         trigger: ctx.trigger,
         provider: evt.provider,
         model: evt.model,
+        success: !!hasContent,
+        durationMs,
+        stopReason,
         payload: cfg.capturePayloads
           ? {
               assistantTexts: evt.assistantTexts,

@@ -72,15 +72,19 @@ def source_options(f):
 
 def _detect_primary_model() -> str | None:
     """Try to read the primary model from the OpenClaw config."""
-    config_path = Path.home() / ".openclaw" / "openclaw.json"
-    if not config_path.exists():
-        return None
-    try:
-        import json
-        cfg = json.loads(config_path.read_text())
-        return cfg.get("agents", {}).get("defaults", {}).get("model", {}).get("primary")
-    except Exception:
-        return None
+    import json
+    for name in ("openclaw.json", "config.json"):
+        config_path = Path.home() / ".openclaw" / name
+        if not config_path.exists():
+            continue
+        try:
+            cfg = json.loads(config_path.read_text())
+            primary = cfg.get("agents", {}).get("defaults", {}).get("model", {}).get("primary")
+            if primary:
+                return primary
+        except Exception:
+            continue
+    return None
 
 
 def load_records(log_dir, log_file):
