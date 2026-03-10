@@ -251,13 +251,19 @@ def build_routing_timeline(
     return timeline
 
 
-def detect_fallback_chains(timeline: list[dict]) -> list[dict]:
+def detect_fallback_chains(
+    timeline: list[dict],
+    max_gap_ms: int = 60_000,
+) -> list[dict]:
     """Detect cascading fallback chains from the routing timeline.
 
     A fallback chain is a group of consecutive LLM calls within the same
     session where the first call failed and subsequent calls used different
-    models. We group by session only (not run_id) because fallback retries
-    often use a new run_id.
+    models within a short time window (``max_gap_ms``).  We group by session
+    only (not run_id) because fallback retries often use a new run_id.
+
+    The temporal proximity check (default 60 s between consecutive calls)
+    prevents unrelated later calls from being mis-classified as fallbacks.
 
     Returns a list of chain dicts, each with:
         session_key, start_timestamp, calls (list of timeline entries),
@@ -279,9 +285,14 @@ def detect_fallback_chains(timeline: list[dict]) -> list[dict]:
                 chain_calls = [entries[i]]
                 j = i + 1
                 while j < len(entries):
-                    # Continue chain if same session and model differs from
-                    # the initial call (cascading to a different model)
-                    if entries[j]["model"] != entries[i]["model"]:
+                    prev_ts = chain_calls[-1]["timestamp"]
+                    curr_ts = entries[j]["timestamp"]
+                    # Only chain if the next call is temporally close and
+                    # uses a different model (actual fallback behaviour).
+                    if (
+                        entries[j]["model"] != entries[i]["model"]
+                        and (curr_ts - prev_ts) <= max_gap_ms
+                    ):
                         chain_calls.append(entries[j])
                         if entries[j]["success"]:
                             break  # chain resolved

@@ -22,7 +22,11 @@ const plugin = {
 
     // Track llm_input timestamps for duration calculation in llm_output.
     // Key: "runId:sessionId" → timestamp
+    // Entries are cleaned up on llm_output, plus a periodic sweep for
+    // orphans (e.g. network failures where llm_output never fires).
     const inputTimestamps = new Map<string, number>();
+    const INPUT_TS_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+    let inputTsSweepTimer: ReturnType<typeof setInterval> | undefined;
 
     // -----------------------------------------------------------------
     // before_model_resolve — capture model routing decisions
@@ -78,9 +82,11 @@ const plugin = {
     // -----------------------------------------------------------------
     api.on("llm_output", (evt, ctx) => {
       // Infer success: the SDK doesn't provide an explicit success flag.
-      // If lastAssistant exists and has content, the call succeeded.
+      // If lastAssistant has non-empty content, the call succeeded.
+      // Note: empty arrays are truthy in JS, so we must check .length.
       const la = evt.lastAssistant as Record<string, unknown> | undefined;
-      const hasContent = la?.content || (evt.assistantTexts && evt.assistantTexts.length > 0);
+      const laContent = Array.isArray(la?.content) ? la.content as unknown[] : undefined;
+      const hasContent = (laContent && laContent.length > 0) || (evt.assistantTexts && evt.assistantTexts.length > 0);
       const stopReason = la?.stopReason as string | undefined;
 
       // Calculate duration from paired llm_input timestamp
@@ -255,9 +261,18 @@ const plugin = {
     api.registerService({
       id: "llm-doctor-writer",
       start() {
+        // Sweep orphaned inputTimestamps every 5 minutes
+        inputTsSweepTimer = setInterval(() => {
+          const cutoff = Date.now() - INPUT_TS_MAX_AGE_MS;
+          for (const [key, ts] of inputTimestamps) {
+            if (ts < cutoff) inputTimestamps.delete(key);
+          }
+        }, 5 * 60 * 1000);
         api.logger.info("llm-doctor: service started");
       },
       stop() {
+        if (inputTsSweepTimer) clearInterval(inputTsSweepTimer);
+        inputTimestamps.clear();
         unsubDiag();
         api.logger.info("llm-doctor: service stopped");
       },

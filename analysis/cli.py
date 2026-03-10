@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -72,7 +73,6 @@ def source_options(f):
 
 def _detect_primary_model() -> str | None:
     """Try to read the primary model from the OpenClaw config."""
-    import json
     for name in ("openclaw.json", "config.json"):
         config_path = Path.home() / ".openclaw" / name
         if not config_path.exists():
@@ -275,8 +275,6 @@ def replay(log_dir, log_file, session_filter, token_method, output_format, outpu
 @source_options
 def export(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Export a session's raw records as a JSON array."""
-    import json
-
     if not session_filter:
         click.echo("Error: --session is required for export", err=True)
         sys.exit(1)

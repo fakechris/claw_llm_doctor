@@ -151,8 +151,8 @@ def render_routing(report: RoutingReport) -> str:
             role = "Primary" if e["is_primary"] is True else ("Fallback" if e["is_primary"] is False else "?")
             role_cls = "tag-green" if e["is_primary"] is True else ("tag-yellow" if e["is_primary"] is False else "")
             ok = '<span class="tag tag-green">OK</span>' if e["success"] else '<span class="tag tag-red">FAIL</span>'
-            dur = f'{e["duration_ms"]}ms' if e["duration_ms"] is not None else "-"
-            html += f"<tr><td>{e['timestamp']}</td><td>{_esc(str(e['session_key'])[:20])}</td>"
+            dur = _esc(f'{e["duration_ms"]}ms') if e["duration_ms"] is not None else "-"
+            html += f"<tr><td>{_esc(e['timestamp'])}</td><td>{_esc(str(e['session_key'])[:20])}</td>"
             html += f"<td>{_esc(e['model'])}</td><td>{_esc(e['provider'])}</td>"
             html += f'<td><span class="tag {role_cls}">{role}</span></td>'
             html += f"<td>{ok}</td><td class='num'>{dur}</td></tr>"
@@ -167,7 +167,7 @@ def render_routing(report: RoutingReport) -> str:
             html += "<table><tr><th class='num'>Step</th><th>Model</th><th>OK</th><th>Error</th><th class='num'>Duration</th></tr>"
             for step, call in enumerate(chain["calls"], 1):
                 ok = '<span class="tag tag-green">OK</span>' if call["success"] else '<span class="tag tag-red">FAIL</span>'
-                dur = f'{call["duration_ms"]}ms' if call["duration_ms"] is not None else "-"
+                dur = _esc(f'{call["duration_ms"]}ms') if call["duration_ms"] is not None else "-"
                 err = _esc((call.get("error") or "")[:60])
                 html += f"<tr><td class='num'>{step}</td><td>{_esc(call['model'])}</td><td>{ok}</td><td>{err}</td><td class='num'>{dur}</td></tr>"
             html += "</table></div>"
@@ -370,4 +370,9 @@ def write_html(html: str, output: str) -> None:
 
 def _esc(s: Any) -> str:
     """Escape HTML special characters."""
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return (str(s)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#x27;"))
