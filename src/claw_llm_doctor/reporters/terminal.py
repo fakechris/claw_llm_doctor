@@ -49,6 +49,7 @@ def print_routing(report: RoutingReport) -> None:
     t.add_column("Metric", style="cyan")
     t.add_column("Value", justify="right")
 
+    t.add_row("Primary model", report.primary_model or "(not configured)")
     t.add_row("Total LLM calls", str(report.total_calls))
     t.add_row("Primary calls", str(report.primary_calls))
     t.add_row("Fallback calls", str(report.fallback_calls))
@@ -106,9 +107,20 @@ def print_routing(report: RoutingReport) -> None:
             )
         console.print(st)
 
-    # Routing timeline
+    # Routing timeline (capped to 30 rows: first 15 + last 15)
     if report.timeline:
-        tt = Table(title="Routing Timeline", show_header=True, header_style="bold")
+        total_entries = len(report.timeline)
+        cap = 30
+        if total_entries > cap:
+            display_entries = report.timeline[:15] + report.timeline[-15:]
+            omitted = total_entries - cap
+            title = f"Routing Timeline ({cap} of {total_entries})"
+        else:
+            display_entries = report.timeline
+            omitted = 0
+            title = f"Routing Timeline ({total_entries})"
+
+        tt = Table(title=title, show_header=True, header_style="bold")
         tt.add_column("Timestamp", style="dim")
         tt.add_column("Session", style="cyan", max_width=16)
         tt.add_column("Model", style="cyan")
@@ -117,8 +129,10 @@ def print_routing(report: RoutingReport) -> None:
         tt.add_column("OK", justify="center")
         tt.add_column("Duration", justify="right")
 
-        for entry in report.timeline:
-            ts_str = str(entry["timestamp"])
+        for idx, entry in enumerate(display_entries):
+            if omitted and idx == 15:
+                tt.add_row(f"... {omitted} omitted ...", "", "", "", "", "", "")
+            ts_str = datetime.fromtimestamp(entry["timestamp"] / 1000).strftime("%H:%M:%S")
             role_label = "Primary" if entry["is_primary"] is True else (
                 "Fallback" if entry["is_primary"] is False else "?"
             )
@@ -192,10 +206,16 @@ def print_context(report: ContextReport) -> None:
     console.print()
     console.print(Panel("[bold]Layer 3a: Context Composition Analysis[/bold]", style="blue"))
 
+    has_context_limits = any(t.context_limit for t in report.turns)
+
     console.print(f"  Session: [cyan]{report.session_key}[/cyan]")
     console.print(f"  Turns analyzed: {len(report.turns)}")
-    console.print(f"  Peak utilization: {pct(report.peak_utilization)}")
-    console.print(f"  Avg utilization: {pct(report.avg_utilization)}")
+    if has_context_limits:
+        console.print(f"  Peak utilization: {pct(report.peak_utilization)}")
+        console.print(f"  Avg utilization: {pct(report.avg_utilization)}")
+    else:
+        console.print(f"  Peak utilization: N/A (no context limit available)")
+        console.print(f"  Avg utilization: N/A (no context limit available)")
     console.print(f"  Compaction events: {len(report.compaction_events)}")
     console.print()
 
@@ -208,12 +228,12 @@ def print_context(report: ContextReport) -> None:
         t.add_column("ToolRes", justify="right")
         t.add_column("Think", justify="right")
         t.add_column("Total", justify="right", style="bold")
-        t.add_column("Util", justify="right")
-        t.add_column("HP", justify="center")
+        if has_context_limits:
+            t.add_column("Util", justify="right")
+            t.add_column("HP", justify="center")
 
         for comp in report.turns:
-            color = health_color(comp.health)
-            t.add_row(
+            row = [
                 str(comp.turn_index),
                 format_tokens(comp.system_tokens),
                 format_tokens(comp.tool_def_tokens),
@@ -221,9 +241,12 @@ def print_context(report: ContextReport) -> None:
                 format_tokens(comp.tool_result_tokens),
                 format_tokens(comp.thinking_tokens),
                 format_tokens(comp.total_tokens),
-                pct(comp.utilization),
-                Text("\u25cf", style=color),
-            )
+            ]
+            if has_context_limits:
+                color = health_color(comp.health)
+                row.append(pct(comp.utilization))
+                row.append(Text("\u25cf", style=color))
+            t.add_row(*row)
         console.print(t)
 
     if report.large_payloads:
@@ -231,9 +254,24 @@ def print_context(report: ContextReport) -> None:
         for lp in report.large_payloads[:5]:
             console.print(f"    Turn {lp['turn']}: tool_result={format_tokens(lp['tool_result_tokens'])}")
 
-    # Context growth curve (ASCII bar chart)
+    # Context growth curve (ASCII bar chart, sampled to max 40 points)
     curve = report.growth_curve()
     if curve:
+        max_points = 40
+        if len(curve) > max_points:
+            # Always keep: first, last, and compaction points
+            keep = {0, len(curve) - 1}
+            for ci in report.compaction_events:
+                if 0 <= ci < len(curve):
+                    keep.add(ci)
+            # Evenly sample remaining slots
+            remaining = max_points - len(keep)
+            if remaining > 0:
+                step = max(1, len(curve) // remaining)
+                for idx in range(0, len(curve), step):
+                    keep.add(idx)
+            curve = [curve[i] for i in sorted(keep)][:max_points]
+
         max_tokens = max((pt["total_tokens"] for pt in curve), default=1) or 1
         bar_width = 40
         console.print()
@@ -309,14 +347,22 @@ def print_compression(report: CompressionReport) -> None:
             if c.preserved_entities:
                 console.print(f"      Preserved entities: {len(c.preserved_entities)}")
 
-    # Similarity curve
+    # Similarity curve (only show notable changes: sim < 0.95 or delta > 1%)
     if report.similarity_curve and len(report.similarity_curve) > 1:
-        console.print("\n  Similarity vs baseline:")
+        console.print("\n  Similarity vs baseline (notable changes):")
+        prev_sim = 1.0
+        shown = 0
         for i, sim in enumerate(report.similarity_curve):
-            bar_len = int(sim * 30)
-            bar = "\u2588" * bar_len + "\u2591" * (30 - bar_len)
-            color = "green" if sim > 0.9 else "yellow" if sim > 0.7 else "red"
-            console.print(f"    Turn {i:3d}: [{color}]{bar}[/{color}] {pct(sim)}")
+            delta = abs(sim - prev_sim)
+            if sim < 0.95 or delta > 0.01 or i == 0:
+                bar_len = int(sim * 30)
+                bar = "\u2588" * bar_len + "\u2591" * (30 - bar_len)
+                color = "green" if sim > 0.9 else "yellow" if sim > 0.7 else "red"
+                console.print(f"    Turn {i:3d}: [{color}]{bar}[/{color}] {pct(sim)}")
+                shown += 1
+            prev_sim = sim
+        if shown == 0:
+            console.print("    All turns >= 95% similar to baseline.")
 
 
 # -- Layer 3d: Thinking ----------------------------------------------------
@@ -456,6 +502,8 @@ def print_performance(report: PerformanceReport) -> None:
         mt.add_column("Cache Hit", justify="right")
 
         for model, mp in sorted(report.by_model.items()):
+            throughput_avg = f"{mp.avg_throughput_tps:.1f}" if mp.success_count > 0 else "N/A"
+            throughput_p50 = f"{mp.p50_throughput_tps:.1f}" if mp.success_count > 0 else "N/A"
             mt.add_row(
                 model,
                 str(mp.call_count),
@@ -463,17 +511,17 @@ def print_performance(report: PerformanceReport) -> None:
                 f"{mp.p50_latency_ms:.0f}ms",
                 f"{mp.p95_latency_ms:.0f}ms",
                 f"{mp.p99_latency_ms:.0f}ms",
-                f"{mp.avg_throughput_tps:.1f}",
-                f"{mp.p50_throughput_tps:.1f}",
+                throughput_avg,
+                throughput_p50,
                 pct(mp.cache_hit_rate),
             )
         console.print(mt)
 
-    # Per-call detail (top 10 slowest)
-    calls_with_dur = [c for c in report.calls if c.e2e_ms is not None]
-    if calls_with_dur:
-        slowest = sorted(calls_with_dur, key=lambda c: c.e2e_ms or 0, reverse=True)[:10]
-        st = Table(title="Slowest Calls (Top 10)", show_header=True, header_style="bold")
+    # Slowest successful calls (top 10)
+    successful_with_dur = [c for c in report.calls if c.e2e_ms is not None and c.success]
+    if successful_with_dur:
+        slowest = sorted(successful_with_dur, key=lambda c: c.e2e_ms or 0, reverse=True)[:10]
+        st = Table(title="Slowest Successful Calls (Top 10)", show_header=True, header_style="bold")
         st.add_column("Turn", justify="right", style="dim")
         st.add_column("Time", style="dim")
         st.add_column("Model", style="cyan")
@@ -481,10 +529,8 @@ def print_performance(report: PerformanceReport) -> None:
         st.add_column("In Tok", justify="right")
         st.add_column("Out Tok", justify="right")
         st.add_column("tok/s", justify="right")
-        st.add_column("OK", justify="center")
 
         for c in slowest:
-            ok_text = Text("OK", style="green") if c.success else Text("FAIL", style="red")
             ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%H:%M:%S") if c.ts else "-"
             st.add_row(
                 str(c.turn_index),
@@ -494,16 +540,46 @@ def print_performance(report: PerformanceReport) -> None:
                 str(c.input_tokens),
                 str(c.output_tokens),
                 f"{c.output_tps:.1f}",
-                ok_text,
             )
         console.print(st)
 
-    # Performance over time (10-minute buckets)
+    # Failed calls (up to 10)
+    failed_calls = [c for c in report.calls if not c.success]
+    if failed_calls:
+        ft = Table(title=f"Failed Calls ({len(failed_calls)})", show_header=True, header_style="bold")
+        ft.add_column("Turn", justify="right", style="dim")
+        ft.add_column("Time", style="dim")
+        ft.add_column("Model", style="cyan")
+        ft.add_column("E2E", justify="right")
+
+        for c in failed_calls[:10]:
+            ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%H:%M:%S") if c.ts else "-"
+            dur = f"{c.e2e_ms}ms" if c.e2e_ms is not None else "-"
+            ft.add_row(
+                str(c.turn_index),
+                ts_str,
+                c.model or "?",
+                dur,
+            )
+        if len(failed_calls) > 10:
+            ft.add_row(f"... {len(failed_calls) - 10} more ...", "", "", "")
+        console.print(ft)
+
+    # Performance over time (adaptive buckets)
+    calls_with_dur = [c for c in report.calls if c.e2e_ms is not None]
     if calls_with_dur and len(calls_with_dur) > 1:
         import statistics
-        bucket_ms = 10 * 60 * 1000
+        from claw_llm_doctor.analyzers.routing import _auto_bucket_minutes
+
         ts_values = [c.ts for c in calls_with_dur if c.ts]
         first_ts = min(ts_values) if ts_values else 0
+        last_ts = max(ts_values) if ts_values else 0
+        # Build a fake timeline for _auto_bucket_minutes
+        bucket_minutes = _auto_bucket_minutes(
+            [{"timestamp": first_ts}, {"timestamp": last_ts}]
+        ) if first_ts and last_ts and last_ts > first_ts else 10
+        bucket_ms = bucket_minutes * 60 * 1000
+
         buckets: dict[int, list] = {}
         for c in calls_with_dur:
             if not c.ts:
@@ -538,6 +614,85 @@ def print_performance(report: PerformanceReport) -> None:
             console.print(bt)
 
 
+# -- Executive Summary -----------------------------------------------------
+
+
+def print_executive_summary(
+    routing: RoutingReport,
+    contexts: list[ContextReport] | None = None,
+    thinkings: list[ThinkingReport] | None = None,
+    performances: list[PerformanceReport] | None = None,
+) -> None:
+    """Print a concise executive summary at the top of the full report."""
+    console.print()
+    console.print(Panel("[bold]Executive Summary[/bold]", style="green"))
+
+    # Overview line
+    session_count = len(routing.session_summaries)
+    total_calls = routing.total_calls
+
+    # Compute time span from timeline
+    if routing.timeline:
+        first_ts = routing.timeline[0]["timestamp"]
+        last_ts = routing.timeline[-1]["timestamp"]
+        span_hours = (last_ts - first_ts) / 3_600_000
+        span_str = f"{span_hours:.1f}h" if span_hours >= 1 else f"{(last_ts - first_ts) / 60_000:.0f}m"
+    else:
+        span_str = "?"
+
+    console.print(f"  Analyzed [bold]{session_count}[/bold] session(s), "
+                  f"[bold]{total_calls}[/bold] LLM calls over [bold]{span_str}[/bold]")
+    console.print()
+
+    # Model success rates
+    if routing.primary_model:
+        p_rate = routing.primary_success_rate
+        p_color = "green" if p_rate >= 0.95 else ("yellow" if p_rate >= 0.8 else "red")
+        console.print(f"  Primary model: [cyan]{routing.primary_model}[/cyan]  "
+                      f"success=[{p_color}]{pct(p_rate)}[/{p_color}]  "
+                      f"({routing.primary_calls} calls)")
+
+    if routing.fallback_calls > 0:
+        f_rate = routing.fallback_success_rate
+        f_color = "green" if f_rate >= 0.95 else ("yellow" if f_rate >= 0.8 else "red")
+        console.print(f"  Fallback models: success=[{f_color}]{pct(f_rate)}[/{f_color}]  "
+                      f"({routing.fallback_calls} calls)")
+
+    console.print()
+
+    # Findings
+    findings: list[str] = []
+
+    if routing.total_failure > 0:
+        findings.append(f"[red]{routing.total_failure}[/red] failed call(s) "
+                       f"({pct(routing.total_failure / routing.total_calls)} failure rate)")
+
+    if routing.fallback_chains:
+        findings.append(f"{len(routing.fallback_chains)} fallback chain(s) detected")
+
+    # Thinking leakage
+    total_leakage = 0
+    if thinkings:
+        total_leakage = sum(t.turns_with_leakage for t in thinkings)
+    if total_leakage > 0:
+        findings.append(f"[red]{total_leakage}[/red] turn(s) with thinking leakage")
+
+    # High failure rate models
+    for model, count in routing.calls_by_model.most_common():
+        fail = routing.failure_by_model.get(model, 0)
+        if count >= 3 and fail / count > 0.3:
+            findings.append(f"Model [cyan]{model}[/cyan] has {pct(fail / count)} failure rate ({fail}/{count})")
+
+    if findings:
+        console.print("  [bold]Findings:[/bold]")
+        for f in findings:
+            console.print(f"    \u2022 {f}")
+    else:
+        console.print("  [green]No issues detected.[/green]")
+
+    console.print()
+
+
 # -- Full report -----------------------------------------------------------
 
 
@@ -549,8 +704,6 @@ def print_full_report(
     thinking: ThinkingReport | None = None,
     performance: PerformanceReport | None = None,
 ) -> None:
-    console.print(Panel("[bold magenta]claw_llm_doctor \u2014 Diagnostic Report[/bold magenta]", style="magenta"))
-
     if routing:
         print_routing(routing)
     if context:
