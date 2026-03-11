@@ -11,6 +11,7 @@ from claw_llm_doctor.analyzers.context import ContextReport
 from claw_llm_doctor.analyzers.prompt_order import PromptOrderReport
 from claw_llm_doctor.analyzers.prompt_compression import CompressionReport
 from claw_llm_doctor.analyzers.thinking import ThinkingReport
+from claw_llm_doctor.analyzers.performance import PerformanceReport
 
 
 def routing_to_dict(report: RoutingReport) -> dict[str, Any]:
@@ -134,9 +135,11 @@ def thinking_to_dict(report: ThinkingReport) -> dict[str, Any]:
         "turns_with_leakage": report.turns_with_leakage,
         "leakage_rate": round(report.leakage_rate, 4),
         "leakage_pattern_counts": report.leakage_pattern_counts,
+        "leakage_category_counts": report.leakage_category_counts,
         "turns": [
             {
                 "turn": t.turn_index,
+                "model": t.model,
                 "thinking_tokens": t.thinking_tokens,
                 "content_tokens": t.content_tokens,
                 "thinking_ratio": round(t.thinking_ratio, 4),
@@ -145,6 +148,7 @@ def thinking_to_dict(report: ThinkingReport) -> dict[str, Any]:
                 "leakage_instances": [
                     {
                         "pattern": li.pattern_name,
+                        "category": li.category,
                         "matched": li.matched_text,
                         "context": li.context,
                     }
@@ -157,12 +161,59 @@ def thinking_to_dict(report: ThinkingReport) -> dict[str, Any]:
     }
 
 
+def performance_to_dict(report: PerformanceReport) -> dict[str, Any]:
+    return {
+        "layer": "performance",
+        "session_key": report.session_key,
+        "total_calls": report.total_calls,
+        "calls_with_duration": report.calls_with_duration,
+        "total_input_tokens": report.total_input_tokens,
+        "total_output_tokens": report.total_output_tokens,
+        "total_cache_read": report.total_cache_read,
+        "avg_latency_ms": round(report.avg_latency_ms, 1),
+        "avg_throughput_tps": round(report.avg_throughput_tps, 1),
+        "overall_cache_hit_rate": round(report.overall_cache_hit_rate, 4),
+        "by_model": {
+            model: {
+                "call_count": mp.call_count,
+                "success_count": mp.success_count,
+                "avg_latency_ms": round(mp.avg_latency_ms, 1),
+                "p50_latency_ms": round(mp.p50_latency_ms, 1),
+                "p90_latency_ms": round(mp.p90_latency_ms, 1),
+                "p95_latency_ms": round(mp.p95_latency_ms, 1),
+                "p99_latency_ms": round(mp.p99_latency_ms, 1),
+                "avg_throughput_tps": round(mp.avg_throughput_tps, 1),
+                "p50_throughput_tps": round(mp.p50_throughput_tps, 1),
+                "cache_hit_rate": round(mp.cache_hit_rate, 4),
+                "total_input_tokens": mp.total_input_tokens,
+                "total_output_tokens": mp.total_output_tokens,
+            }
+            for model, mp in sorted(report.by_model.items())
+        },
+        "calls": [
+            {
+                "turn": c.turn_index,
+                "model": c.model,
+                "provider": c.provider,
+                "e2e_ms": c.e2e_ms,
+                "input_tokens": c.input_tokens,
+                "output_tokens": c.output_tokens,
+                "cache_read_tokens": c.cache_read_tokens,
+                "output_tps": c.output_tps,
+                "success": c.success,
+            }
+            for c in report.calls
+        ],
+    }
+
+
 def build_full_json(
     routing: RoutingReport | None = None,
     contexts: list[ContextReport] | None = None,
     prompt_orders: list[PromptOrderReport] | None = None,
     compressions: list[CompressionReport] | None = None,
     thinkings: list[ThinkingReport] | None = None,
+    performances: list[PerformanceReport] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {"version": "0.1.0"}
     if routing:
@@ -175,6 +226,8 @@ def build_full_json(
         result["compression"] = [compression_to_dict(c) for c in compressions]
     if thinkings:
         result["thinking"] = [thinking_to_dict(t) for t in thinkings]
+    if performances:
+        result["performance"] = [performance_to_dict(p) for p in performances]
     return result
 
 

@@ -31,7 +31,7 @@ dependencies = [
 tiktoken = ["tiktoken"]
 
 [project.scripts]
-claw-doctor = "claw_llm_doctor.cli:main"
+claw-llm-doctor = "claw_llm_doctor.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/fakechris/claw_llm_doctor"

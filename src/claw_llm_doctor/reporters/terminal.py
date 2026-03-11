@@ -14,6 +14,7 @@ from claw_llm_doctor.analyzers.context import ContextReport
 from claw_llm_doctor.analyzers.prompt_order import PromptOrderReport
 from claw_llm_doctor.analyzers.prompt_compression import CompressionReport
 from claw_llm_doctor.analyzers.thinking import ThinkingReport
+from claw_llm_doctor.analyzers.performance import PerformanceReport
 from claw_llm_doctor.loader import Session
 from claw_llm_doctor.utils.tokens import format_tokens
 
@@ -335,19 +336,42 @@ def print_thinking(report: ThinkingReport) -> None:
     if report.turns_with_leakage > 0:
         console.print(f"\n  [red]Thinking leakage detected in {report.turns_with_leakage} turns ({pct(report.leakage_rate)} of thinking turns)[/red]")
 
-        lt = Table(title="Leakage Pattern Counts", show_header=True, header_style="bold")
+        # By category
+        if report.leakage_category_counts:
+            ct = Table(title="Leakage by Category", show_header=True, header_style="bold")
+            ct.add_column("Category", style="red")
+            ct.add_column("Count", justify="right")
+            category_labels = {
+                "tag_leak": "Tag Leak (think_never_used / <thinking>)",
+                "en_monologue": "English Inner Monologue",
+                "cn_monologue": "Chinese Inner Monologue",
+                "interleave": "Token Interleaving",
+            }
+            for cat, count in sorted(report.leakage_category_counts.items(), key=lambda x: -x[1]):
+                ct.add_row(category_labels.get(cat, cat), str(count))
+            console.print(ct)
+
+        # By pattern
+        lt = Table(title="Leakage Pattern Details", show_header=True, header_style="bold")
         lt.add_column("Pattern", style="red")
+        lt.add_column("Category")
         lt.add_column("Count", justify="right")
+        # Merge pattern + category
+        pattern_cats: dict[str, str] = {}
+        for turn in report.turns:
+            for li in turn.leakage_instances:
+                pattern_cats[li.pattern_name] = li.category
         for name, count in sorted(report.leakage_pattern_counts.items(), key=lambda x: -x[1]):
-            lt.add_row(name, str(count))
+            lt.add_row(name, pattern_cats.get(name, "?"), str(count))
         console.print(lt)
 
         # Show examples
         for turn in report.turns:
             if turn.has_leakage:
-                console.print(f"\n  Turn {turn.turn_index} leakage examples:")
+                model_str = f"  model={turn.model}" if turn.model else ""
+                console.print(f"\n  Turn {turn.turn_index} [{turn.leakage_severity}]{model_str}:")
                 for li in turn.leakage_instances[:3]:
-                    console.print(f"    [{li.pattern_name}] \"{li.matched_text}\"")
+                    console.print(f"    [{li.category}/{li.pattern_name}] \"{li.matched_text}\"")
                     console.print(f"    [dim]...{li.context}...[/dim]")
     else:
         console.print(f"\n  [green]No thinking leakage detected.[/green]")
@@ -377,6 +401,76 @@ def print_thinking(report: ThinkingReport) -> None:
         console.print(tt)
 
 
+# -- Layer 4: Performance --------------------------------------------------
+
+
+def print_performance(report: PerformanceReport) -> None:
+    console.print()
+    console.print(Panel("[bold]Layer 4: LLM Performance Metrics[/bold]", style="blue"))
+
+    console.print(f"  Session: [cyan]{report.session_key}[/cyan]")
+    console.print(f"  Total calls: {report.total_calls} ({report.calls_with_duration} with timing)")
+    console.print(f"  Total tokens: {format_tokens(report.total_input_tokens)} in / {format_tokens(report.total_output_tokens)} out")
+    console.print(f"  Cache hit rate: {pct(report.overall_cache_hit_rate)}")
+    if report.avg_latency_ms > 0:
+        console.print(f"  Avg E2E latency: {report.avg_latency_ms:.0f}ms")
+    if report.avg_throughput_tps > 0:
+        console.print(f"  Avg output throughput: {report.avg_throughput_tps:.1f} tok/s")
+
+    # Per-model table
+    if report.by_model:
+        mt = Table(title="Performance by Model", show_header=True, header_style="bold")
+        mt.add_column("Model", style="cyan")
+        mt.add_column("Calls", justify="right")
+        mt.add_column("Avg Lat.", justify="right")
+        mt.add_column("p50 Lat.", justify="right")
+        mt.add_column("p95 Lat.", justify="right")
+        mt.add_column("p99 Lat.", justify="right")
+        mt.add_column("Avg tok/s", justify="right")
+        mt.add_column("p50 tok/s", justify="right")
+        mt.add_column("Cache Hit", justify="right")
+
+        for model, mp in sorted(report.by_model.items()):
+            mt.add_row(
+                model,
+                str(mp.call_count),
+                f"{mp.avg_latency_ms:.0f}ms",
+                f"{mp.p50_latency_ms:.0f}ms",
+                f"{mp.p95_latency_ms:.0f}ms",
+                f"{mp.p99_latency_ms:.0f}ms",
+                f"{mp.avg_throughput_tps:.1f}",
+                f"{mp.p50_throughput_tps:.1f}",
+                pct(mp.cache_hit_rate),
+            )
+        console.print(mt)
+
+    # Per-call detail (top 10 slowest)
+    calls_with_dur = [c for c in report.calls if c.e2e_ms is not None]
+    if calls_with_dur:
+        slowest = sorted(calls_with_dur, key=lambda c: c.e2e_ms or 0, reverse=True)[:10]
+        st = Table(title="Slowest Calls (Top 10)", show_header=True, header_style="bold")
+        st.add_column("Turn", justify="right", style="dim")
+        st.add_column("Model", style="cyan")
+        st.add_column("E2E", justify="right")
+        st.add_column("In Tok", justify="right")
+        st.add_column("Out Tok", justify="right")
+        st.add_column("tok/s", justify="right")
+        st.add_column("OK", justify="center")
+
+        for c in slowest:
+            ok_text = Text("OK", style="green") if c.success else Text("FAIL", style="red")
+            st.add_row(
+                str(c.turn_index),
+                c.model or "?",
+                f"{c.e2e_ms}ms",
+                str(c.input_tokens),
+                str(c.output_tokens),
+                f"{c.output_tps:.1f}",
+                ok_text,
+            )
+        console.print(st)
+
+
 # -- Full report -----------------------------------------------------------
 
 
@@ -386,6 +480,7 @@ def print_full_report(
     prompt_order: PromptOrderReport | None = None,
     compression: CompressionReport | None = None,
     thinking: ThinkingReport | None = None,
+    performance: PerformanceReport | None = None,
 ) -> None:
     console.print(Panel("[bold magenta]claw_llm_doctor \u2014 Diagnostic Report[/bold magenta]", style="magenta"))
 
@@ -399,6 +494,8 @@ def print_full_report(
         print_compression(compression)
     if thinking:
         print_thinking(thinking)
+    if performance:
+        print_performance(performance)
 
     console.print()
 
