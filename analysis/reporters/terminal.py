@@ -56,6 +56,7 @@ def print_routing(report: RoutingReport) -> None:
     t.add_row("Fallback success rate", pct(report.fallback_success_rate))
     t.add_row("Overall success rate", pct(report.overall_success_rate))
     t.add_row("Fallback trigger rate", pct(report.fallback_trigger_rate))
+    t.add_row("Fan-out ratio", f"{report.fan_out_ratio:.1f}x")
     console.print(t)
 
     # Model breakdown
@@ -136,6 +137,26 @@ def print_routing(report: RoutingReport) -> None:
                 dur,
             )
         console.print(tt)
+
+    # Success rate over time
+    if report.success_over_time:
+        sot = Table(title="Success Rate Over Time", show_header=True, header_style="bold")
+        sot.add_column("Time Window", style="dim")
+        sot.add_column("Total", justify="right")
+        sot.add_column("Success", justify="right", style="green")
+        sot.add_column("Rate", justify="right")
+
+        for bucket in report.success_over_time:
+            start_str = datetime.fromtimestamp(bucket["bucket_start"] / 1000).strftime("%H:%M")
+            end_str = datetime.fromtimestamp(bucket["bucket_end"] / 1000).strftime("%H:%M")
+            rate_style = "green" if bucket["rate"] >= 0.9 else ("yellow" if bucket["rate"] >= 0.7 else "red")
+            sot.add_row(
+                f"{start_str}-{end_str}",
+                str(bucket["total"]),
+                str(bucket["success"]),
+                Text(pct(bucket["rate"]), style=rate_style),
+            )
+        console.print(sot)
 
     # Fallback chains
     if report.fallback_chains:

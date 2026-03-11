@@ -53,7 +53,7 @@ rsync -av --exclude node_modules --exclude package-lock.json plugin/ ~/.openclaw
 
 ### Configure
 
-Add to `~/.openclaw/config.json`:
+Add to `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -181,6 +181,8 @@ Analyzes Primary vs Fallback model routing:
 - Error classification (auth_failed, rate_limited, timeout, context_length_exceeded, server_error)
 - Routing timeline with time-ordered view of all LLM calls
 - Fallback chain detection (cascading failures across models)
+- Success rate over time (degradation detection in 10-min buckets)
+- Fan-out ratio (user requests vs LLM calls)
 - Per-session summary
 
 Use `--primary-model ark/doubao-seed-2.0-code` to specify which model is primary (auto-detected from `~/.openclaw/openclaw.json` if available).

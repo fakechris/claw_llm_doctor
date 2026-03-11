@@ -21,10 +21,13 @@ def routing_to_dict(report: RoutingReport) -> dict[str, Any]:
             "primary_calls": report.primary_calls,
             "fallback_calls": report.fallback_calls,
             "unknown_routing": report.unknown_routing,
+            "total_success": report.total_success,
+            "total_failure": report.total_failure,
             "primary_success_rate": round(report.primary_success_rate, 4),
             "fallback_success_rate": round(report.fallback_success_rate, 4),
             "overall_success_rate": round(report.overall_success_rate, 4),
             "fallback_trigger_rate": round(report.fallback_trigger_rate, 4),
+            "fan_out_ratio": round(report.fan_out_ratio, 2),
         },
         "by_model": {
             model: {
@@ -46,6 +49,7 @@ def routing_to_dict(report: RoutingReport) -> dict[str, Any]:
         "sessions": report.session_summaries,
         "timeline": report.timeline,
         "fallback_chains": report.fallback_chains,
+        "success_over_time": report.success_over_time,
     }
 
 
