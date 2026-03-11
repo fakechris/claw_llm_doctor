@@ -156,6 +156,24 @@ def load_dir(directory: str | Path) -> list[Record]:
     return records
 
 
+def filter_by_time(
+    records: list[Record],
+    since_ms: int | None = None,
+    until_ms: int | None = None,
+) -> list[Record]:
+    """Filter records to those within [since_ms, until_ms] (epoch milliseconds)."""
+    if since_ms is None and until_ms is None:
+        return records
+    result: list[Record] = []
+    for r in records:
+        if since_ms is not None and r.ts < since_ms:
+            continue
+        if until_ms is not None and r.ts > until_ms:
+            continue
+        result.append(r)
+    return result
+
+
 def group_sessions(records: list[Record]) -> list[Session]:
     """Group records into sessions by sessionKey."""
     sessions: dict[str, Session] = {}

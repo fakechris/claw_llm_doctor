@@ -369,7 +369,8 @@ def print_thinking(report: ThinkingReport) -> None:
         for turn in report.turns:
             if turn.has_leakage:
                 model_str = f"  model={turn.model}" if turn.model else ""
-                console.print(f"\n  Turn {turn.turn_index} [{turn.leakage_severity}]{model_str}:")
+                ts_str = datetime.fromtimestamp(turn.ts / 1000).strftime("%H:%M:%S") if turn.ts else "?"
+                console.print(f"\n  Turn {turn.turn_index} [{turn.leakage_severity}]{model_str}  [dim]{ts_str}[/dim]:")
                 for li in turn.leakage_instances[:3]:
                     console.print(f"    [{li.category}/{li.pattern_name}] \"{li.matched_text}\"")
                     console.print(f"    [dim]...{li.context}...[/dim]")
@@ -381,6 +382,8 @@ def print_thinking(report: ThinkingReport) -> None:
     if thinking_turns:
         tt = Table(title="Thinking per Turn", show_header=True, header_style="bold")
         tt.add_column("Turn", justify="right", style="dim")
+        tt.add_column("Time", style="dim")
+        tt.add_column("Model", style="cyan", max_width=25)
         tt.add_column("Think Tokens", justify="right")
         tt.add_column("Content Tokens", justify="right")
         tt.add_column("Ratio", justify="right")
@@ -390,8 +393,11 @@ def print_thinking(report: ThinkingReport) -> None:
         for t in thinking_turns:
             cats = ", ".join(sorted({b.category for b in t.thinking_blocks}))
             leak_indicator = Text("\u25cf", style=severity_color(t.leakage_severity))
+            ts_str = datetime.fromtimestamp(t.ts / 1000).strftime("%H:%M:%S") if t.ts else "-"
             tt.add_row(
                 str(t.turn_index),
+                ts_str,
+                t.model or "?",
                 format_tokens(t.thinking_tokens),
                 format_tokens(t.content_tokens),
                 pct(t.thinking_ratio),
@@ -399,6 +405,25 @@ def print_thinking(report: ThinkingReport) -> None:
                 leak_indicator,
             )
         console.print(tt)
+
+    # Leakage by model summary
+    leak_turns = [t for t in report.turns if t.has_leakage]
+    if leak_turns:
+        model_leaks: dict[str, int] = {}
+        for t in leak_turns:
+            key = t.model or "unknown"
+            model_leaks[key] = model_leaks.get(key, 0) + len(t.leakage_instances)
+        mlt = Table(title="Leakage by Model", show_header=True, header_style="bold")
+        mlt.add_column("Model", style="cyan")
+        mlt.add_column("Leak Instances", justify="right")
+        mlt.add_column("Turns Affected", justify="right")
+        model_turn_counts: dict[str, int] = {}
+        for t in leak_turns:
+            key = t.model or "unknown"
+            model_turn_counts[key] = model_turn_counts.get(key, 0) + 1
+        for model, count in sorted(model_leaks.items(), key=lambda x: -x[1]):
+            mlt.add_row(model, str(count), str(model_turn_counts[model]))
+        console.print(mlt)
 
 
 # -- Layer 4: Performance --------------------------------------------------
@@ -450,6 +475,7 @@ def print_performance(report: PerformanceReport) -> None:
         slowest = sorted(calls_with_dur, key=lambda c: c.e2e_ms or 0, reverse=True)[:10]
         st = Table(title="Slowest Calls (Top 10)", show_header=True, header_style="bold")
         st.add_column("Turn", justify="right", style="dim")
+        st.add_column("Time", style="dim")
         st.add_column("Model", style="cyan")
         st.add_column("E2E", justify="right")
         st.add_column("In Tok", justify="right")
@@ -459,8 +485,10 @@ def print_performance(report: PerformanceReport) -> None:
 
         for c in slowest:
             ok_text = Text("OK", style="green") if c.success else Text("FAIL", style="red")
+            ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%H:%M:%S") if c.ts else "-"
             st.add_row(
                 str(c.turn_index),
+                ts_str,
                 c.model or "?",
                 f"{c.e2e_ms}ms",
                 str(c.input_tokens),
@@ -469,6 +497,45 @@ def print_performance(report: PerformanceReport) -> None:
                 ok_text,
             )
         console.print(st)
+
+    # Performance over time (10-minute buckets)
+    if calls_with_dur and len(calls_with_dur) > 1:
+        import statistics
+        bucket_ms = 10 * 60 * 1000
+        ts_values = [c.ts for c in calls_with_dur if c.ts]
+        first_ts = min(ts_values) if ts_values else 0
+        buckets: dict[int, list] = {}
+        for c in calls_with_dur:
+            if not c.ts:
+                continue
+            idx = (c.ts - first_ts) // bucket_ms
+            buckets.setdefault(idx, []).append(c)
+
+        if len(buckets) > 1:
+            bt = Table(title="Performance Over Time", show_header=True, header_style="bold")
+            bt.add_column("Time Window", style="dim")
+            bt.add_column("Calls", justify="right")
+            bt.add_column("Avg Lat.", justify="right")
+            bt.add_column("Avg tok/s", justify="right")
+            bt.add_column("Models", style="cyan", max_width=40)
+
+            for idx in sorted(buckets):
+                bc = buckets[idx]
+                start_ts = first_ts + idx * bucket_ms
+                end_ts = start_ts + bucket_ms
+                start_str = datetime.fromtimestamp(start_ts / 1000).strftime("%H:%M")
+                end_str = datetime.fromtimestamp(end_ts / 1000).strftime("%H:%M")
+                lats = [c.e2e_ms for c in bc if c.e2e_ms is not None]
+                tps_list = [c.output_tps for c in bc if c.output_tps > 0]
+                models = sorted(set(c.model or "?" for c in bc))
+                bt.add_row(
+                    f"{start_str}-{end_str}",
+                    str(len(bc)),
+                    f"{statistics.mean(lats):.0f}ms" if lats else "-",
+                    f"{statistics.mean(tps_list):.1f}" if tps_list else "-",
+                    ", ".join(models),
+                )
+            console.print(bt)
 
 
 # -- Full report -----------------------------------------------------------

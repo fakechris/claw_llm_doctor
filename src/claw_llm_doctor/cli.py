@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import click
 
 from claw_llm_doctor import __version__
-from claw_llm_doctor.loader import load_file, load_dir, group_sessions
+from claw_llm_doctor.loader import load_file, load_dir, group_sessions, filter_by_time
 
 
 DEFAULT_LOG_DIR = Path.home() / ".openclaw" / "logs" / "llm-doctor"
@@ -69,6 +70,17 @@ def source_options(f):
         default=None,
         help="Primary model ID (e.g. ark/doubao-seed-2.0-code) for routing classification",
     )(f)
+    f = click.option(
+        "--since",
+        default=None,
+        help="Only include records after this time. Accepts: '30m', '1h', '2h30m', "
+        "or ISO datetime '2026-03-11T10:00:00'",
+    )(f)
+    f = click.option(
+        "--until",
+        default=None,
+        help="Only include records before this time. Same format as --since.",
+    )(f)
     return f
 
 
@@ -88,17 +100,66 @@ def _detect_primary_model() -> str | None:
     return None
 
 
-def load_records(log_dir, log_file):
-    """Load records from file or directory."""
+def _parse_time_spec(spec: str) -> int:
+    """Parse a time spec into epoch milliseconds.
+
+    Accepts relative durations like '30m', '1h', '2h30m'
+    or ISO datetimes like '2026-03-11T10:00:00'.
+    """
+    import re
+
+    # Try relative duration first: e.g. '30m', '1h', '2h30m', '90s'
+    dur_match = re.fullmatch(
+        r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?",
+        spec.strip(),
+    )
+    if dur_match and any(dur_match.groups()):
+        hours = int(dur_match.group(1) or 0)
+        minutes = int(dur_match.group(2) or 0)
+        seconds = int(dur_match.group(3) or 0)
+        delta = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+        ts = datetime.now(tz=timezone.utc) - delta
+        return int(ts.timestamp() * 1000)
+
+    # Try ISO datetime -- naive datetimes are treated as local time
+    # (.timestamp() interprets naive datetimes as local, which is the
+    # expected UX: --since 10:00 means 10 AM local.)
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(spec.strip(), fmt)
+            return int(dt.timestamp() * 1000)
+        except ValueError:
+            continue
+
+    click.echo(f"Error: cannot parse time '{spec}'. Use '30m', '1h', or ISO datetime.", err=True)
+    sys.exit(1)
+
+
+def load_records(log_dir, log_file, since=None, until=None):
+    """Load records from file or directory, optionally filtering by time."""
     if log_file:
-        return load_file(log_file)
-    directory = Path(log_dir) if log_dir else DEFAULT_LOG_DIR
-    if not directory.exists():
-        click.echo(f"Error: log directory not found: {directory}", err=True)
-        click.echo("Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
-        click.echo("Run 'claw-llm-doctor enable' to install the plugin.", err=True)
+        records = load_file(log_file)
+    else:
+        directory = Path(log_dir) if log_dir else DEFAULT_LOG_DIR
+        if not directory.exists():
+            click.echo(f"Error: log directory not found: {directory}", err=True)
+            click.echo("Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
+            click.echo("Run 'claw-llm-doctor enable' to install the plugin.", err=True)
+            sys.exit(1)
+        records = load_dir(directory)
+
+    since_ms = _parse_time_spec(since) if since else None
+    until_ms = _parse_time_spec(until) if until else None
+    records = filter_by_time(records, since_ms, until_ms)
+
+    if not records:
+        if since or until:
+            click.echo("No records found for the specified time range.", err=True)
+        else:
+            click.echo("No records found. Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
         sys.exit(1)
-    return load_dir(directory)
+
+    return records
 
 
 def filter_sessions(sessions, session_filter):
@@ -166,13 +227,13 @@ def status() -> None:
 
 @main.command()
 @source_options
-def routing(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def routing(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Layer 1: Analyze LM routing (Primary/Fallback, success rates, errors)."""
     from claw_llm_doctor.analyzers.routing import analyze_routing
     from claw_llm_doctor.reporters.terminal import print_routing
 
     primary_model = primary_model or _detect_primary_model()
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     report = analyze_routing(sessions, primary_model=primary_model)
@@ -181,12 +242,12 @@ def routing(log_dir, log_file, session_filter, token_method, output_format, outp
 
 @main.command()
 @source_options
-def context(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def context(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Layer 3a: Analyze context window composition and utilization."""
     from claw_llm_doctor.analyzers.context import analyze_context
     from claw_llm_doctor.reporters.terminal import print_context
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     for session in sessions:
@@ -196,12 +257,12 @@ def context(log_dir, log_file, session_filter, token_method, output_format, outp
 
 @main.command(name="prompt-order")
 @source_options
-def prompt_order(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def prompt_order(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Layer 3b: Analyze system prompt section ordering."""
     from claw_llm_doctor.analyzers.prompt_order import analyze_prompt_order
     from claw_llm_doctor.reporters.terminal import print_prompt_order
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     for session in sessions:
@@ -211,12 +272,12 @@ def prompt_order(log_dir, log_file, session_filter, token_method, output_format,
 
 @main.command(name="prompt-compression")
 @source_options
-def prompt_compression(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def prompt_compression(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Layer 3c: Analyze system prompt compression and content loss."""
     from claw_llm_doctor.analyzers.prompt_compression import analyze_compression
     from claw_llm_doctor.reporters.terminal import print_compression
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     for session in sessions:
@@ -226,12 +287,12 @@ def prompt_compression(log_dir, log_file, session_filter, token_method, output_f
 
 @main.command()
 @source_options
-def thinking(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def thinking(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Layer 3d: Analyze thinking process separation and leakage."""
     from claw_llm_doctor.analyzers.thinking import analyze_thinking
     from claw_llm_doctor.reporters.terminal import print_thinking
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     for session in sessions:
@@ -241,12 +302,12 @@ def thinking(log_dir, log_file, session_filter, token_method, output_format, out
 
 @main.command()
 @source_options
-def performance(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def performance(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Layer 4: Analyze LLM performance (latency, throughput, cache efficiency)."""
     from claw_llm_doctor.analyzers.performance import analyze_performance
     from claw_llm_doctor.reporters.terminal import print_performance
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     for session in sessions:
@@ -256,7 +317,7 @@ def performance(log_dir, log_file, session_filter, token_method, output_format, 
 
 @main.command()
 @source_options
-def full(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def full(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Run all analysis layers and generate a complete report."""
     from claw_llm_doctor.analyzers.routing import analyze_routing
     from claw_llm_doctor.analyzers.context import analyze_context
@@ -265,7 +326,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
     from claw_llm_doctor.analyzers.thinking import analyze_thinking
     from claw_llm_doctor.analyzers.performance import analyze_performance
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     primary_model = primary_model or _detect_primary_model()
@@ -329,7 +390,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
 
 @main.command()
 @source_options
-def replay(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def replay(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Replay a session as a human-readable conversation timeline."""
     from claw_llm_doctor.reporters.terminal import print_replay
 
@@ -337,7 +398,7 @@ def replay(log_dir, log_file, session_filter, token_method, output_format, outpu
         click.echo("Error: --session is required for replay", err=True)
         sys.exit(1)
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     for session in sessions:
@@ -346,13 +407,13 @@ def replay(log_dir, log_file, session_filter, token_method, output_format, outpu
 
 @main.command()
 @source_options
-def export(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def export(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """Export a session's raw records as a JSON array."""
     if not session_filter:
         click.echo("Error: --session is required for export", err=True)
         sys.exit(1)
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     sessions = filter_sessions(group_sessions(records), session_filter)
 
     all_records = []
@@ -374,13 +435,12 @@ def export(log_dir, log_file, session_filter, token_method, output_format, outpu
 
 @main.command()
 @source_options
-def sessions(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+def sessions(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model, since, until) -> None:
     """List all captured sessions."""
     from rich.console import Console
     from rich.table import Table
-    from datetime import datetime
 
-    records = load_records(log_dir, log_file)
+    records = load_records(log_dir, log_file, since=since, until=until)
     all_sessions = filter_sessions(group_sessions(records), session_filter)
 
     console = Console()

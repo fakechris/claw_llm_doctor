@@ -23,6 +23,7 @@ class CallPerf:
     """Performance data for a single LLM call."""
 
     turn_index: int
+    ts: int = 0  # epoch ms timestamp of the llm.output event
     model: str | None = None
     provider: str | None = None
     e2e_ms: int | None = None
@@ -151,6 +152,7 @@ def analyze_performance(session: Session) -> PerformanceReport:
 
         call = CallPerf(
             turn_index=i,
+            ts=out.ts,
             model=model,
             provider=provider,
             e2e_ms=dur,

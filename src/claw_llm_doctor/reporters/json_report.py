@@ -139,6 +139,7 @@ def thinking_to_dict(report: ThinkingReport) -> dict[str, Any]:
         "turns": [
             {
                 "turn": t.turn_index,
+                "ts": t.ts,
                 "model": t.model,
                 "thinking_tokens": t.thinking_tokens,
                 "content_tokens": t.content_tokens,
@@ -193,6 +194,7 @@ def performance_to_dict(report: PerformanceReport) -> dict[str, Any]:
         "calls": [
             {
                 "turn": c.turn_index,
+                "ts": c.ts,
                 "model": c.model,
                 "provider": c.provider,
                 "e2e_ms": c.e2e_ms,
