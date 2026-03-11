@@ -116,6 +116,9 @@ class RoutingReport:
     # Fan-out ratio (user requests -> LLM calls)
     fan_out_ratio: float = 0.0
 
+    # Primary model identifier (from config or --primary-model)
+    primary_model: str | None = None
+
     @property
     def primary_success_rate(self) -> float:
         if self.primary_calls == 0:
@@ -329,20 +332,37 @@ def detect_fallback_chains(
     return chains
 
 
+def _auto_bucket_minutes(timeline: list[dict]) -> int:
+    """Choose bucket size based on total time span of the timeline."""
+    if len(timeline) < 2:
+        return 10
+    span_ms = timeline[-1]["timestamp"] - timeline[0]["timestamp"]
+    span_hours = span_ms / (3_600_000)
+    if span_hours < 4:
+        return 10
+    if span_hours < 12:
+        return 30
+    return 60
+
+
 def build_success_over_time(
     timeline: list[dict],
-    bucket_minutes: int = 10,
+    bucket_minutes: int | None = None,
 ) -> list[dict]:
     """Bucket LLM calls into time windows and compute per-bucket success rates.
 
     Useful for detecting degradation patterns (e.g. success rate dropping over
-    time).
+    time).  When *bucket_minutes* is None the bucket size is chosen
+    automatically based on total time span (<4h→10min, 4-12h→30min, >12h→60min).
 
     Returns a list of dicts with keys:
         bucket_start, bucket_end, total, success, rate
     """
     if not timeline:
         return []
+
+    if bucket_minutes is None:
+        bucket_minutes = _auto_bucket_minutes(timeline)
 
     bucket_ms = bucket_minutes * 60 * 1000
     first_ts = timeline[0]["timestamp"]
@@ -383,7 +403,7 @@ def analyze_routing(
     config (e.g. ``"ark/doubao-seed-2.0-code"``).  When provided, routing
     classification will infer primary vs fallback.
     """
-    report = RoutingReport()
+    report = RoutingReport(primary_model=primary_model)
 
     for session in sessions:
         calls = pair_llm_calls(session)

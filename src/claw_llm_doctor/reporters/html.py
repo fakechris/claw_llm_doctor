@@ -101,6 +101,10 @@ def render_routing(report: RoutingReport) -> str:
     s = d["summary"]
     html = '<h2>Layer 1: LM Routing Analysis</h2><div class="card">'
 
+    # Primary model info
+    if report.primary_model:
+        html += f'<div class="metric"><div class="label">Primary Model</div><div class="value">{_esc(report.primary_model)}</div></div>'
+
     # Summary metrics
     metrics = [
         ("Total Calls", s["total_calls"]),
@@ -148,14 +152,28 @@ def render_routing(report: RoutingReport) -> str:
         html += "</table>"
 
     if report.timeline:
-        html += "<h3>Routing Timeline</h3><table><tr><th>Time</th><th>Session</th>"
+        total_entries = len(report.timeline)
+        cap = 30
+        if total_entries > cap:
+            display_entries = report.timeline[:15] + report.timeline[-15:]
+            omitted = total_entries - cap
+            title = f"Routing Timeline ({cap} of {total_entries})"
+        else:
+            display_entries = report.timeline
+            omitted = 0
+            title = f"Routing Timeline ({total_entries})"
+
+        html += f"<h3>{_esc(title)}</h3><table><tr><th>Time</th><th>Session</th>"
         html += "<th>Model</th><th>Provider</th><th>Role</th><th>OK</th><th>Duration</th></tr>"
-        for e in report.timeline:
+        for idx, e in enumerate(display_entries):
+            if omitted and idx == 15:
+                html += f'<tr><td colspan="7" style="text-align:center;color:var(--muted)">... {omitted} omitted ...</td></tr>'
+            ts_str = datetime.fromtimestamp(e["timestamp"] / 1000).strftime("%H:%M:%S")
             role = "Primary" if e["is_primary"] is True else ("Fallback" if e["is_primary"] is False else "?")
             role_cls = "tag-green" if e["is_primary"] is True else ("tag-yellow" if e["is_primary"] is False else "")
             ok = '<span class="tag tag-green">OK</span>' if e["success"] else '<span class="tag tag-red">FAIL</span>'
             dur = _esc(f'{e["duration_ms"]}ms') if e["duration_ms"] is not None else "-"
-            html += f"<tr><td>{_esc(e['timestamp'])}</td><td>{_esc(str(e['session_key'])[:20])}</td>"
+            html += f"<tr><td>{_esc(ts_str)}</td><td>{_esc(str(e['session_key'])[:20])}</td>"
             html += f"<td>{_esc(e['model'])}</td><td>{_esc(e['provider'])}</td>"
             html += f'<td><span class="tag {role_cls}">{role}</span></td>'
             html += f"<td>{ok}</td><td class='num'>{dur}</td></tr>"
