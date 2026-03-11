@@ -346,8 +346,9 @@ def render_thinking(report: ThinkingReport) -> str:
         for turn in report.turns:
             if turn.has_leakage:
                 model_str = f" model={_esc(turn.model)}" if turn.model else ""
+                ts_str = datetime.fromtimestamp(turn.ts / 1000).strftime("%H:%M:%S") if turn.ts else "?"
                 for li in turn.leakage_instances[:3]:
-                    html += f'<div class="leak-example">Turn {turn.turn_index}{model_str} '
+                    html += f'<div class="leak-example">Turn {turn.turn_index} <span style="color:var(--muted)">{ts_str}</span>{model_str} '
                     html += f'[{_esc(li.category)}/{_esc(li.pattern_name)}]: <code>{_esc(li.matched_text)}</code><br>'
                     html += f'{_esc(li.context)}</div>'
 
@@ -355,16 +356,36 @@ def render_thinking(report: ThinkingReport) -> str:
     thinking_turns = [t for t in report.turns if t.has_thinking]
     if thinking_turns:
         html += "<h3>Thinking per Turn</h3><table><tr><th class='num'>Turn</th>"
+        html += "<th>Time</th><th>Model</th>"
         html += "<th class='num'>Think</th><th class='num'>Content</th>"
         html += "<th class='num'>Ratio</th><th>Categories</th><th>Leak</th></tr>"
         for t in thinking_turns:
             cats = ", ".join(sorted({b.category for b in t.thinking_blocks}))
+            ts_str = datetime.fromtimestamp(t.ts / 1000).strftime("%H:%M:%S") if t.ts else "-"
             html += f"<tr><td class='num'>{t.turn_index}</td>"
+            html += f"<td style='color:var(--muted)'>{ts_str}</td>"
+            html += f"<td>{_esc(t.model or '?')}</td>"
             html += f"<td class='num'>{format_tokens(t.thinking_tokens)}</td>"
             html += f"<td class='num'>{format_tokens(t.content_tokens)}</td>"
             html += f"<td class='num'>{pct(t.thinking_ratio)}</td>"
             html += f"<td>{_esc(cats)}</td>"
             html += f"<td>{severity_badge(t.leakage_severity)}</td></tr>"
+        html += "</table>"
+
+    # Leakage by model
+    leak_turns = [t for t in report.turns if t.has_leakage]
+    if leak_turns:
+        model_leaks: dict[str, int] = {}
+        model_turn_counts: dict[str, int] = {}
+        for t in leak_turns:
+            key = t.model or "unknown"
+            model_leaks[key] = model_leaks.get(key, 0) + len(t.leakage_instances)
+            model_turn_counts[key] = model_turn_counts.get(key, 0) + 1
+        html += "<h3>Leakage by Model</h3><table><tr><th>Model</th>"
+        html += "<th class='num'>Leak Instances</th><th class='num'>Turns Affected</th></tr>"
+        for model, count in sorted(model_leaks.items(), key=lambda x: -x[1]):
+            html += f"<tr><td>{_esc(model)}</td><td class='num'>{count}</td>"
+            html += f"<td class='num'>{model_turn_counts[model]}</td></tr>"
         html += "</table>"
 
     return html

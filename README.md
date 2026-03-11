@@ -12,29 +12,32 @@ Diagnostic toolkit for [OpenClaw](https://github.com/openclaw) -- intercept, rec
 
 ## Installation
 
+Recommended: install globally with [uv](https://docs.astral.sh/uv/):
+
 ```bash
-pip install git+https://github.com/fakechris/claw_llm_doctor.git
+uv tool install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 
 <details>
-<summary>Alternative: install with uv</summary>
+<summary>Alternative: install with pipx</summary>
 
 ```bash
-uv pip install git+https://github.com/fakechris/claw_llm_doctor.git
+pipx install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 </details>
 
 <details>
-<summary>Alternative: install from local clone</summary>
+<summary>Alternative: install inside a virtual environment</summary>
 
 ```bash
 git clone https://github.com/fakechris/claw_llm_doctor.git
 cd claw_llm_doctor
-pip install .
+uv venv && source .venv/bin/activate
+uv pip install .
 ```
 </details>
 
-> Once published to PyPI, you will also be able to run `pip install claw-llm-doctor`.
+> Once published to PyPI: `uv tool install claw-llm-doctor` or `pipx install claw-llm-doctor`.
 
 ## Quick Start
 
@@ -117,6 +120,8 @@ All analysis commands accept:
 --file PATH          Analyze a single JSONL file
 --log-dir PATH       Custom log directory
 --session KEY        Filter to a specific session
+--since TIME         Only include records after this time (e.g. '30m', '1h', '2026-03-11T10:00')
+--until TIME         Only include records before this time (same format as --since)
 --primary-model ID   Override primary model for routing classification
 --token-method       char (fast, default) or tiktoken (accurate)
 --format             terminal (default), json, or html
