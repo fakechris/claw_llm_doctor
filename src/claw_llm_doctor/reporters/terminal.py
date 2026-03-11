@@ -502,7 +502,8 @@ def print_performance(report: PerformanceReport) -> None:
     if calls_with_dur and len(calls_with_dur) > 1:
         import statistics
         bucket_ms = 10 * 60 * 1000
-        first_ts = min(c.ts for c in calls_with_dur if c.ts)
+        ts_values = [c.ts for c in calls_with_dur if c.ts]
+        first_ts = min(ts_values) if ts_values else 0
         buckets: dict[int, list] = {}
         for c in calls_with_dur:
             if not c.ts:

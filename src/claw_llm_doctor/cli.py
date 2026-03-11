@@ -121,7 +121,9 @@ def _parse_time_spec(spec: str) -> int:
         ts = datetime.now(tz=timezone.utc) - delta
         return int(ts.timestamp() * 1000)
 
-    # Try ISO datetime (with or without timezone)
+    # Try ISO datetime -- naive datetimes are treated as local time
+    # (.timestamp() interprets naive datetimes as local, which is the
+    # expected UX: --since 10:00 means 10 AM local.)
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             dt = datetime.strptime(spec.strip(), fmt)
@@ -151,7 +153,10 @@ def load_records(log_dir, log_file, since=None, until=None):
     records = filter_by_time(records, since_ms, until_ms)
 
     if not records:
-        click.echo("No records found for the specified time range.", err=True)
+        if since or until:
+            click.echo("No records found for the specified time range.", err=True)
+        else:
+            click.echo("No records found. Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
         sys.exit(1)
 
     return records
