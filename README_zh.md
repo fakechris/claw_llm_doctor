@@ -12,29 +12,32 @@
 
 ## 安装
 
+推荐使用 [uv](https://docs.astral.sh/uv/) 全局安装：
+
 ```bash
-pip install git+https://github.com/fakechris/claw_llm_doctor.git
+uv tool install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 
 <details>
-<summary>其他方式：使用 uv 安装</summary>
+<summary>其他方式：使用 pipx 安装</summary>
 
 ```bash
-uv pip install git+https://github.com/fakechris/claw_llm_doctor.git
+pipx install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 </details>
 
 <details>
-<summary>其他方式：从本地源码安装</summary>
+<summary>其他方式：在虚拟环境中安装</summary>
 
 ```bash
 git clone https://github.com/fakechris/claw_llm_doctor.git
 cd claw_llm_doctor
-pip install .
+uv venv && source .venv/bin/activate
+uv pip install .
 ```
 </details>
 
-> 发布到 PyPI 后，也可以直接运行 `pip install claw-llm-doctor`。
+> 发布到 PyPI 后：`uv tool install claw-llm-doctor` 或 `pipx install claw-llm-doctor`。
 
 ## 快速开始
 
@@ -117,6 +120,8 @@ claw-llm-doctor status     # 查看安装状态
 --file PATH          分析单个 JSONL 文件
 --log-dir PATH       自定义日志目录
 --session KEY        按会话过滤
+--since TIME         只包含此时间之后的记录（如 '30m', '1h', '2026-03-11T10:00'）
+--until TIME         只包含此时间之前的记录（格式同 --since）
 --primary-model ID   指定主模型用于路由分类
 --token-method       char（快速，默认）或 tiktoken（精确）
 --format             terminal（默认）、json 或 html

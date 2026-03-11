@@ -93,6 +93,7 @@ class TurnThinkingAnalysis:
     """Thinking analysis for a single turn."""
 
     turn_index: int
+    ts: int = 0  # epoch ms timestamp of the llm.output event
     model: str | None = None
     thinking_blocks: list[ThinkingBlock] = field(default_factory=list)
     content_text: str = ""
@@ -372,6 +373,7 @@ def analyze_thinking(session: Session, token_method: str = "char") -> ThinkingRe
 
         turn = TurnThinkingAnalysis(
             turn_index=i,
+            ts=out.ts,
             model=out.model,
             thinking_blocks=thinking_blocks,
             content_text=content_text[:500],  # truncate for report
