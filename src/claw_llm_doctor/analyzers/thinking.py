@@ -10,11 +10,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from loader import Record, Session
-from utils.tokens import count_tokens
+from claw_llm_doctor.loader import Record, Session
+from claw_llm_doctor.utils.tokens import count_tokens
 
 
-# ── Thinking leakage patterns ─────────────────────────────────────────────
+# -- Thinking leakage patterns ---------------------------------------------
 
 # Patterns that suggest thinking/reasoning leaked into content blocks.
 # These are common "inner monologue" phrases that shouldn't appear in final output.
@@ -29,7 +29,7 @@ LEAKAGE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
-# ── Result types ──────────────────────────────────────────────────────────
+# -- Result types ----------------------------------------------------------
 
 
 @dataclass
@@ -120,7 +120,7 @@ class ThinkingReport:
         return self.turns_with_leakage / self.turns_with_thinking
 
 
-# ── Analysis ──────────────────────────────────────────────────────────────
+# -- Analysis --------------------------------------------------------------
 
 # Categories for classifying thinking block content
 CATEGORY_PATTERNS: list[tuple[str, re.Pattern[str]]] = [

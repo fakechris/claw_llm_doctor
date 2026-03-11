@@ -1,23 +1,23 @@
-"""HTML reporter — generates a self-contained diagnostic report."""
+"""HTML reporter -- generates a self-contained diagnostic report."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
-from analyzers.routing import RoutingReport
-from analyzers.context import ContextReport
-from analyzers.prompt_order import PromptOrderReport
-from analyzers.prompt_compression import CompressionReport
-from analyzers.thinking import ThinkingReport
-from reporters.json_report import (
+from claw_llm_doctor.analyzers.routing import RoutingReport
+from claw_llm_doctor.analyzers.context import ContextReport
+from claw_llm_doctor.analyzers.prompt_order import PromptOrderReport
+from claw_llm_doctor.analyzers.prompt_compression import CompressionReport
+from claw_llm_doctor.analyzers.thinking import ThinkingReport
+from claw_llm_doctor.reporters.json_report import (
     routing_to_dict,
     context_to_dict,
     prompt_order_to_dict,
     compression_to_dict,
     thinking_to_dict,
 )
-from utils.tokens import format_tokens
+from claw_llm_doctor.utils.tokens import format_tokens
 
 
 def pct(v: float) -> str:
@@ -34,7 +34,7 @@ def severity_badge(sev: str) -> str:
     return f'<span class="badge" style="background:{colors.get(sev, "#888")}"></span>'
 
 
-# ── Template ──────────────────────────────────────────────────────────────
+# -- Template --------------------------------------------------------------
 
 HTML_TEMPLATE = """\
 <!DOCTYPE html>
@@ -91,7 +91,7 @@ HTML_TEMPLATE = """\
 """
 
 
-# ── Section renderers ─────────────────────────────────────────────────────
+# -- Section renderers -----------------------------------------------------
 
 
 def render_routing(report: RoutingReport) -> str:
@@ -178,7 +178,7 @@ def render_routing(report: RoutingReport) -> str:
         html += f"<h3>Fallback Chains ({len(report.fallback_chains)})</h3>"
         for i, chain in enumerate(report.fallback_chains, 1):
             resolved = '<span class="tag tag-green">resolved</span>' if chain["final_success"] else '<span class="tag tag-red">unresolved</span>'
-            models = " → ".join(chain["models_tried"])
+            models = " \u2192 ".join(chain["models_tried"])
             html += f'<div class="card"><strong>Chain {i}:</strong> {_esc(models)} {resolved}'
             html += "<table><tr><th class='num'>Step</th><th>Model</th><th>OK</th><th>Error</th><th class='num'>Duration</th></tr>"
             for step, call in enumerate(chain["calls"], 1):
@@ -192,7 +192,7 @@ def render_routing(report: RoutingReport) -> str:
 
 
 def render_context(report: ContextReport) -> str:
-    html = f'<h2>Layer 3a: Context — {_esc(report.session_key)}</h2><div class="card">'
+    html = f'<h2>Layer 3a: Context \u2014 {_esc(report.session_key)}</h2><div class="card">'
     metrics = [
         ("Turns", len(report.turns)),
         ("Peak Util", pct(report.peak_utilization)),
@@ -239,7 +239,7 @@ def render_context(report: ContextReport) -> str:
 
 def render_prompt_order(report: PromptOrderReport) -> str:
     stable_tag = '<span class="tag tag-green">STABLE</span>' if report.is_stable else '<span class="tag tag-red">UNSTABLE</span>'
-    html = f'<h2>Layer 3b: Prompt Order — {_esc(report.session_key)}</h2><div class="card">'
+    html = f'<h2>Layer 3b: Prompt Order \u2014 {_esc(report.session_key)}</h2><div class="card">'
     html += f'<div class="metric"><div class="label">Turns</div><div class="value">{len(report.turns)}</div></div>'
     html += f'<div class="metric"><div class="label">Ordering</div><div class="value">{stable_tag}</div></div>'
     html += "</div>"
@@ -264,7 +264,7 @@ def render_prompt_order(report: PromptOrderReport) -> str:
 
 
 def render_compression(report: CompressionReport) -> str:
-    html = f'<h2>Layer 3c: Compression — {_esc(report.session_key)}</h2><div class="card">'
+    html = f'<h2>Layer 3c: Compression \u2014 {_esc(report.session_key)}</h2><div class="card">'
     metrics = [
         ("Baseline", f"{report.baseline_length:,} chars"),
         ("Sections", ", ".join(report.baseline_sections)),
@@ -302,7 +302,7 @@ def render_compression(report: CompressionReport) -> str:
 
 
 def render_thinking(report: ThinkingReport) -> str:
-    html = f'<h2>Layer 3d: Thinking — {_esc(report.session_key)}</h2><div class="card">'
+    html = f'<h2>Layer 3d: Thinking \u2014 {_esc(report.session_key)}</h2><div class="card">'
     metrics = [
         ("Thinking Turns", f"{report.turns_with_thinking}/{len(report.turns)}"),
         ("Thinking Ratio", pct(report.overall_thinking_ratio)),
@@ -349,7 +349,7 @@ def render_thinking(report: ThinkingReport) -> str:
     return html
 
 
-# ── Public API ────────────────────────────────────────────────────────────
+# -- Public API ------------------------------------------------------------
 
 
 def generate_html(

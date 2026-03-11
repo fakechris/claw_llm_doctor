@@ -1,4 +1,4 @@
-"""JSON reporter — structured export for programmatic consumption."""
+"""JSON reporter -- structured export for programmatic consumption."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import json
 import sys
 from typing import Any
 
-from analyzers.routing import RoutingReport
-from analyzers.context import ContextReport
-from analyzers.prompt_order import PromptOrderReport
-from analyzers.prompt_compression import CompressionReport
-from analyzers.thinking import ThinkingReport
+from claw_llm_doctor.analyzers.routing import RoutingReport
+from claw_llm_doctor.analyzers.context import ContextReport
+from claw_llm_doctor.analyzers.prompt_order import PromptOrderReport
+from claw_llm_doctor.analyzers.prompt_compression import CompressionReport
+from claw_llm_doctor.analyzers.thinking import ThinkingReport
 
 
 def routing_to_dict(report: RoutingReport) -> dict[str, Any]:

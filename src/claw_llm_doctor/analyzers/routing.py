@@ -10,10 +10,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from loader import Record, Session
+from claw_llm_doctor.loader import Record, Session
 
 
-# ── Result types ──────────────────────────────────────────────────────────
+# -- Result types ----------------------------------------------------------
 
 
 @dataclass
@@ -141,7 +141,7 @@ class RoutingReport:
         return self.fallback_calls / self.total_calls
 
 
-# ── Analysis ──────────────────────────────────────────────────────────────
+# -- Analysis --------------------------------------------------------------
 
 
 def pair_llm_calls(session: Session) -> list[LlmCall]:
@@ -399,7 +399,7 @@ def analyze_routing(
             report.calls_by_model[model] += 1
             report.calls_by_provider[provider] += 1
 
-            # Routing classification — try explicit field first, then infer
+            # Routing classification -- try explicit field first, then infer
             is_primary = call.is_primary
             if is_primary is None:
                 is_primary = infer_primary(call, primary_model)

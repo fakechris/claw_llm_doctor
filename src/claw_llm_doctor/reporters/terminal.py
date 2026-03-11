@@ -1,4 +1,4 @@
-"""Terminal reporter — rich-formatted output for all analysis layers."""
+"""Terminal reporter -- rich-formatted output for all analysis layers."""
 
 from __future__ import annotations
 
@@ -9,19 +9,19 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from analyzers.routing import RoutingReport
-from analyzers.context import ContextReport
-from analyzers.prompt_order import PromptOrderReport
-from analyzers.prompt_compression import CompressionReport
-from analyzers.thinking import ThinkingReport
-from loader import Session
-from utils.tokens import format_tokens
+from claw_llm_doctor.analyzers.routing import RoutingReport
+from claw_llm_doctor.analyzers.context import ContextReport
+from claw_llm_doctor.analyzers.prompt_order import PromptOrderReport
+from claw_llm_doctor.analyzers.prompt_compression import CompressionReport
+from claw_llm_doctor.analyzers.thinking import ThinkingReport
+from claw_llm_doctor.loader import Session
+from claw_llm_doctor.utils.tokens import format_tokens
 
 
 console = Console()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────
+# -- Helpers ---------------------------------------------------------------
 
 
 def pct(value: float) -> str:
@@ -36,7 +36,7 @@ def severity_color(severity: str) -> str:
     return {"none": "green", "low": "yellow", "medium": "bright_red", "high": "red"}.get(severity, "white")
 
 
-# ── Layer 1: Routing ──────────────────────────────────────────────────────
+# -- Layer 1: Routing ------------------------------------------------------
 
 
 def print_routing(report: RoutingReport) -> None:
@@ -184,7 +184,7 @@ def print_routing(report: RoutingReport) -> None:
             console.print(ct)
 
 
-# ── Layer 3a: Context ─────────────────────────────────────────────────────
+# -- Layer 3a: Context -----------------------------------------------------
 
 
 def print_context(report: ContextReport) -> None:
@@ -221,7 +221,7 @@ def print_context(report: ContextReport) -> None:
                 format_tokens(comp.thinking_tokens),
                 format_tokens(comp.total_tokens),
                 pct(comp.utilization),
-                Text("●", style=color),
+                Text("\u25cf", style=color),
             )
         console.print(t)
 
@@ -240,7 +240,7 @@ def print_context(report: ContextReport) -> None:
         console.print()
         for pt in curve:
             bar_len = int((pt["total_tokens"] / max_tokens) * bar_width)
-            bar = "█" * bar_len + "░" * (bar_width - bar_len)
+            bar = "\u2588" * bar_len + "\u2591" * (bar_width - bar_len)
             delta = pt["delta"]
             delta_str = f"+{delta}" if delta >= 0 else str(delta)
             color = "green" if delta >= 0 else "red"
@@ -252,7 +252,7 @@ def print_context(report: ContextReport) -> None:
         console.print()
 
 
-# ── Layer 3b: Prompt Order ────────────────────────────────────────────────
+# -- Layer 3b: Prompt Order ------------------------------------------------
 
 
 def print_prompt_order(report: PromptOrderReport) -> None:
@@ -286,7 +286,7 @@ def print_prompt_order(report: PromptOrderReport) -> None:
             console.print(f"    Turn {ms['turn']}: lost [{', '.join(ms['missing'])}]")
 
 
-# ── Layer 3c: Compression ────────────────────────────────────────────────
+# -- Layer 3c: Compression ------------------------------------------------
 
 
 def print_compression(report: CompressionReport) -> None:
@@ -313,12 +313,12 @@ def print_compression(report: CompressionReport) -> None:
         console.print("\n  Similarity vs baseline:")
         for i, sim in enumerate(report.similarity_curve):
             bar_len = int(sim * 30)
-            bar = "█" * bar_len + "░" * (30 - bar_len)
+            bar = "\u2588" * bar_len + "\u2591" * (30 - bar_len)
             color = "green" if sim > 0.9 else "yellow" if sim > 0.7 else "red"
             console.print(f"    Turn {i:3d}: [{color}]{bar}[/{color}] {pct(sim)}")
 
 
-# ── Layer 3d: Thinking ────────────────────────────────────────────────────
+# -- Layer 3d: Thinking ----------------------------------------------------
 
 
 def print_thinking(report: ThinkingReport) -> None:
@@ -365,7 +365,7 @@ def print_thinking(report: ThinkingReport) -> None:
 
         for t in thinking_turns:
             cats = ", ".join(sorted({b.category for b in t.thinking_blocks}))
-            leak_indicator = Text("●", style=severity_color(t.leakage_severity))
+            leak_indicator = Text("\u25cf", style=severity_color(t.leakage_severity))
             tt.add_row(
                 str(t.turn_index),
                 format_tokens(t.thinking_tokens),
@@ -377,7 +377,7 @@ def print_thinking(report: ThinkingReport) -> None:
         console.print(tt)
 
 
-# ── Full report ───────────────────────────────────────────────────────────
+# -- Full report -----------------------------------------------------------
 
 
 def print_full_report(
@@ -387,7 +387,7 @@ def print_full_report(
     compression: CompressionReport | None = None,
     thinking: ThinkingReport | None = None,
 ) -> None:
-    console.print(Panel("[bold magenta]claw_llm_doctor — Diagnostic Report[/bold magenta]", style="magenta"))
+    console.print(Panel("[bold magenta]claw_llm_doctor \u2014 Diagnostic Report[/bold magenta]", style="magenta"))
 
     if routing:
         print_routing(routing)
@@ -403,7 +403,7 @@ def print_full_report(
     console.print()
 
 
-# ── Session replay ───────────────────────────────────────────────────────
+# -- Session replay --------------------------------------------------------
 
 
 def _relative_ts(ts_ms: int, origin_ms: int) -> str:
@@ -443,7 +443,7 @@ def print_replay(session: Session) -> None:
         offset = _relative_ts(rec.ts, start_ts)
         rtype = rec.type
 
-        # ── agent lifecycle ──────────────────────────────────────────
+        # -- agent lifecycle -----------------------------------------------
         if rtype == "agent.start":
             prompt = rec.raw.get("prompt", "")
             prompt_preview = _truncate(prompt, 100)
@@ -464,11 +464,10 @@ def print_replay(session: Session) -> None:
                 f"  {status}{dur_str}"
             )
 
-        # ── LLM input (user turn) ───────────────────────────────────
+        # -- LLM input (user turn) ----------------------------------------
         elif rtype == "llm.input":
             model = rec.model or "?"
             provider = rec.provider or "?"
-            # Try to extract the user prompt text
             payload = rec.payload or {}
             user_msgs = payload.get("userMessages", [])
             user_text = ""
@@ -489,7 +488,7 @@ def print_replay(session: Session) -> None:
             if user_preview:
                 console.print(f"           [blue]{user_preview}[/blue]")
 
-        # ── LLM output (assistant turn) ──────────────────────────────
+        # -- LLM output (assistant turn) -----------------------------------
         elif rtype == "llm.output":
             model = rec.model or "?"
             provider = rec.provider or "?"
@@ -497,12 +496,10 @@ def print_replay(session: Session) -> None:
             usage = rec.usage or {}
             in_tok = usage.get("input", "?")
             out_tok = usage.get("output", "?")
-            # Assistant text — extract from structured lastAssistant or fall back to assistantTexts
             payload = rec.payload or {}
             assistant_text = ""
             la = payload.get("lastAssistant")
             if isinstance(la, dict):
-                # Extract text from content blocks
                 content_blocks = la.get("content", [])
                 if isinstance(content_blocks, list):
                     parts = [b.get("text", "") for b in content_blocks
@@ -522,7 +519,7 @@ def print_replay(session: Session) -> None:
             if asst_preview:
                 console.print(f"           [green]{asst_preview}[/green]")
 
-        # ── Tool start ───────────────────────────────────────────────
+        # -- Tool start ----------------------------------------------------
         elif rtype == "tool.start":
             tool = rec.raw.get("toolName", "?")
             params = rec.raw.get("params", {})
@@ -533,7 +530,7 @@ def print_replay(session: Session) -> None:
             )
             console.print(f"           [dim]{params_str}[/dim]")
 
-        # ── Tool end ─────────────────────────────────────────────────
+        # -- Tool end ------------------------------------------------------
         elif rtype == "tool.end":
             tool = rec.raw.get("toolName", "?")
             ok = rec.raw.get("success", True)
@@ -549,7 +546,7 @@ def print_replay(session: Session) -> None:
                 f"    [yellow]{tool}[/yellow]  {status}{dur_str}"
             )
 
-        # ── Compaction events ────────────────────────────────────────
+        # -- Compaction events ---------------------------------------------
         elif rtype == "compaction.before":
             console.print(
                 f"\n  [dim]{offset}[/dim]  [bold red]COMPACTION BEFORE[/bold red]"
@@ -559,7 +556,7 @@ def print_replay(session: Session) -> None:
                 f"  [dim]{offset}[/dim]  [bold red]COMPACTION AFTER[/bold red]"
             )
 
-        # ── Other event types (model.resolve, diagnostic, etc.) ──────
+        # -- Other event types ---------------------------------------------
         else:
             console.print(
                 f"  [dim]{offset}[/dim]  [dim]{rtype}[/dim]"
