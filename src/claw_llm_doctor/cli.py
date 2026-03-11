@@ -375,11 +375,33 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
         click.echo(f"HTML report written to {path}")
 
     else:
-        from claw_llm_doctor.reporters.terminal import print_full_report
+        from claw_llm_doctor.reporters.terminal import (
+            print_full_report,
+            print_executive_summary,
+            print_routing,
+            console,
+        )
+        from rich.panel import Panel
 
+        # Single header
+        console.print(Panel("[bold magenta]claw_llm_doctor \u2014 Diagnostic Report[/bold magenta]", style="magenta"))
+
+        # Executive summary
+        print_executive_summary(
+            routing=routing_report,
+            contexts=ctx_reports,
+            thinkings=think_reports,
+            performances=perf_reports,
+        )
+
+        # Routing is cross-session, print once
+        print_routing(routing_report)
+
+        # Per-session layers (skip empty sessions)
         for i, session in enumerate(sessions):
+            if not session.llm_inputs and not session.llm_outputs:
+                continue
             print_full_report(
-                routing=routing_report if i == 0 else None,
                 context=ctx_reports[i],
                 prompt_order=order_reports[i],
                 compression=compress_reports[i],

@@ -17,6 +17,7 @@ from claw_llm_doctor.analyzers.performance import PerformanceReport
 def routing_to_dict(report: RoutingReport) -> dict[str, Any]:
     return {
         "layer": "routing",
+        "primary_model": report.primary_model,
         "summary": {
             "total_calls": report.total_calls,
             "primary_calls": report.primary_calls,
