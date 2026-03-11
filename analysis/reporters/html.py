@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from analyzers.routing import RoutingReport
@@ -156,6 +157,21 @@ def render_routing(report: RoutingReport) -> str:
             html += f"<td>{_esc(e['model'])}</td><td>{_esc(e['provider'])}</td>"
             html += f'<td><span class="tag {role_cls}">{role}</span></td>'
             html += f"<td>{ok}</td><td class='num'>{dur}</td></tr>"
+        html += "</table>"
+
+    if report.success_over_time:
+        html += "<h3>Success Rate Over Time</h3>"
+        html += "<table><tr><th>Time Window</th><th class='num'>Total</th>"
+        html += "<th class='num'>Success</th><th class='num'>Rate</th></tr>"
+        for bucket in report.success_over_time:
+            start_str = _esc(datetime.fromtimestamp(bucket["bucket_start"] / 1000).strftime("%H:%M"))
+            end_str = _esc(datetime.fromtimestamp(bucket["bucket_end"] / 1000).strftime("%H:%M"))
+            rate = bucket["rate"]
+            rate_cls = "tag-green" if rate >= 0.9 else ("tag-yellow" if rate >= 0.7 else "tag-red")
+            html += f"<tr><td>{start_str}-{end_str}</td>"
+            html += f"<td class='num'>{_esc(bucket['total'])}</td>"
+            html += f"<td class='num'>{_esc(bucket['success'])}</td>"
+            html += f"<td><span class='tag {rate_cls}'>{_esc(pct(rate))}</span></td></tr>"
         html += "</table>"
 
     if report.fallback_chains:

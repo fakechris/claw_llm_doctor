@@ -110,6 +110,12 @@ class RoutingReport:
     timeline: list[dict] = field(default_factory=list)
     fallback_chains: list[dict] = field(default_factory=list)
 
+    # Success rate over time (degradation detection)
+    success_over_time: list[dict] = field(default_factory=list)
+
+    # Fan-out ratio (user requests -> LLM calls)
+    fan_out_ratio: float = 0.0
+
     @property
     def primary_success_rate(self) -> float:
         if self.primary_calls == 0:
@@ -323,6 +329,50 @@ def detect_fallback_chains(
     return chains
 
 
+def build_success_over_time(
+    timeline: list[dict],
+    bucket_minutes: int = 10,
+) -> list[dict]:
+    """Bucket LLM calls into time windows and compute per-bucket success rates.
+
+    Useful for detecting degradation patterns (e.g. success rate dropping over
+    time).
+
+    Returns a list of dicts with keys:
+        bucket_start, bucket_end, total, success, rate
+    """
+    if not timeline:
+        return []
+
+    bucket_ms = bucket_minutes * 60 * 1000
+    first_ts = timeline[0]["timestamp"]
+
+    buckets: dict[int, dict] = {}
+    for entry in timeline:
+        offset = entry["timestamp"] - first_ts
+        bucket_idx = offset // bucket_ms
+        bucket_start = first_ts + bucket_idx * bucket_ms
+        bucket_end = bucket_start + bucket_ms
+
+        if bucket_start not in buckets:
+            buckets[bucket_start] = {
+                "bucket_start": bucket_start,
+                "bucket_end": bucket_end,
+                "total": 0,
+                "success": 0,
+            }
+        buckets[bucket_start]["total"] += 1
+        if entry["success"]:
+            buckets[bucket_start]["success"] += 1
+
+    result: list[dict] = []
+    for _start, b in sorted(buckets.items()):
+        b["rate"] = b["success"] / b["total"] if b["total"] > 0 else 0.0
+        result.append(b)
+
+    return result
+
+
 def analyze_routing(
     sessions: list[Session],
     primary_model: str | None = None,
@@ -400,5 +450,15 @@ def analyze_routing(
     # Build timeline and detect fallback chains
     report.timeline = build_routing_timeline(sessions, primary_model)
     report.fallback_chains = detect_fallback_chains(report.timeline)
+
+    # Success rate over time (degradation detection)
+    report.success_over_time = build_success_over_time(report.timeline)
+
+    # Fan-out ratio: total LLM calls per agent start
+    agent_start_count = sum(
+        1 for s in sessions for r in s.records if r.type == "agent.start"
+    )
+    if agent_start_count > 0:
+        report.fan_out_ratio = report.total_calls / agent_start_count
 
     return report

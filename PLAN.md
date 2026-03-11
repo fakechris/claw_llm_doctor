@@ -479,6 +479,15 @@ analysis/reporters/
 
 **Deliverable**: Rich HTML reports with visualizations, JSON export for programmatic use.
 
+### Phase 6: Review Fixes & Hardening
+- Fix overall_success_rate to use total_success (not just primary+fallback)
+- Add success/durationMs/stopReason to llm.output plugin records
+- TTL-based cleanup for inputTimestamps Map (prevent memory leak)
+- Temporal proximity check for fallback chain detection
+- XSS prevention: escape all user-derived values in HTML reporter
+- Content array length check for success inference in plugin
+- PEP 8: top-level imports in cli.py
+
 ## 6. Dependencies
 
 ### Plugin (TypeScript)
