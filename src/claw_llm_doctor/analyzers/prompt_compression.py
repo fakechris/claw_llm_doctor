@@ -7,15 +7,16 @@ Detects content loss in system prompts due to truncation (OpenClaw's
 from __future__ import annotations
 
 import difflib
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from loader import Session
-from analyzers.prompt_order import extract_system_text, detect_sections
-from utils.tokens import count_tokens
+from claw_llm_doctor.loader import Session
+from claw_llm_doctor.analyzers.prompt_order import extract_system_text, detect_sections
+from claw_llm_doctor.utils.tokens import count_tokens
 
 
-# ── Result types ──────────────────────────────────────────────────────────
+# -- Result types ----------------------------------------------------------
 
 
 @dataclass
@@ -61,21 +62,19 @@ class CompressionReport:
     similarity_curve: list[float] = field(default_factory=list)
 
 
-# ── Truncation markers ────────────────────────────────────────────────────
+# -- Truncation markers ----------------------------------------------------
 
 TRUNCATION_MARKERS = [
     "... (truncated)",
     "[TRUNCATED]",
     "<!-- truncated -->",
-    "⚠️ Content truncated",
+    "\u26a0\ufe0f Content truncated",
     "... content continues",
     "[Content exceeded",
 ]
 
 
-# ── Entity extraction (for compaction preservation check) ─────────────────
-
-import re
+# -- Entity extraction (for compaction preservation check) -----------------
 
 # Patterns for important entities that should survive compaction
 ENTITY_PATTERNS = [
@@ -95,7 +94,7 @@ def extract_entities(text: str) -> set[str]:
     return entities
 
 
-# ── Analysis ──────────────────────────────────────────────────────────────
+# -- Analysis --------------------------------------------------------------
 
 
 def check_truncation(text: str) -> list[str]:
@@ -152,7 +151,7 @@ def analyze_compression(session: Session, token_method: str = "char") -> Compres
         # Truncation check
         markers = check_truncation(text)
         loss_ratio = 1.0 - (len(text) / report.baseline_length) if report.baseline_length > 0 else 0.0
-        loss_ratio = max(0.0, loss_ratio)  # clamp — text can grow
+        loss_ratio = max(0.0, loss_ratio)  # clamp -- text can grow
 
         trunc = TruncationInfo(
             turn_index=turn_idx,
@@ -172,7 +171,6 @@ def analyze_compression(session: Session, token_method: str = "char") -> Compres
         if len(text) < len(prev_text) * 0.5 and turn_idx > baseline_idx:
             current_entities = extract_entities(text)
             preserved = sorted(baseline_entities & current_entities)
-            lost_entity_count = len(baseline_entities - current_entities)
 
             # Check which section labels disappeared
             current_sections = detect_sections(text)

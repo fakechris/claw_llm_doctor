@@ -14,7 +14,7 @@ from typing import Any
 import orjson
 
 
-# ── Record types ──────────────────────────────────────────────────────────
+# -- Record types ----------------------------------------------------------
 
 
 @dataclass
@@ -70,7 +70,7 @@ class Record:
         return self.raw.get("fallbackReason")
 
 
-# ── Session grouping ──────────────────────────────────────────────────────
+# -- Session grouping ------------------------------------------------------
 
 
 @dataclass
@@ -107,7 +107,7 @@ class Session:
         return (min(ts_values), max(ts_values)) if ts_values else (0, 0)
 
 
-# ── Loading ───────────────────────────────────────────────────────────────
+# -- Loading ---------------------------------------------------------------
 
 
 def parse_record(line: bytes) -> Record | None:

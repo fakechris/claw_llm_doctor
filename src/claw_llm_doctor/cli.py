@@ -1,4 +1,4 @@
-"""claw-doctor CLI — analyze OpenClaw LLM diagnostic logs."""
+"""claw-doctor CLI -- analyze OpenClaw LLM diagnostic logs."""
 
 from __future__ import annotations
 
@@ -8,19 +8,20 @@ from pathlib import Path
 
 import click
 
-from loader import load_file, load_dir, group_sessions
+from claw_llm_doctor import __version__
+from claw_llm_doctor.loader import load_file, load_dir, group_sessions
 
 
 DEFAULT_LOG_DIR = Path.home() / ".openclaw" / "logs" / "llm-doctor"
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version=__version__)
 def main() -> None:
-    """claw_llm_doctor — diagnose OpenClaw LLM Provider behaviour."""
+    """claw-doctor -- diagnose OpenClaw LLM Provider behaviour."""
 
 
-# ── Shared options ────────────────────────────────────────────────────────
+# -- Shared options --------------------------------------------------------
 
 
 def source_options(f):
@@ -94,7 +95,8 @@ def load_records(log_dir, log_file):
     directory = Path(log_dir) if log_dir else DEFAULT_LOG_DIR
     if not directory.exists():
         click.echo(f"Error: log directory not found: {directory}", err=True)
-        click.echo(f"Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
+        click.echo("Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
+        click.echo("Run 'claw-doctor enable' to install the plugin.", err=True)
         sys.exit(1)
     return load_dir(directory)
 
@@ -109,15 +111,65 @@ def filter_sessions(sessions, session_filter):
     return sessions
 
 
-# ── Commands ──────────────────────────────────────────────────────────────
+# -- Plugin management commands --------------------------------------------
+
+
+@main.command()
+def enable() -> None:
+    """Install and enable the OpenClaw Gateway plugin."""
+    from claw_llm_doctor.plugin_manager import enable_plugin
+
+    click.echo("Enabling claw-llm-doctor plugin...")
+    enable_plugin(verbose=True)
+
+
+@main.command()
+@click.option("--remove", is_flag=True, help="Also remove plugin files from extensions")
+def disable(remove: bool) -> None:
+    """Disable the OpenClaw Gateway plugin."""
+    from claw_llm_doctor.plugin_manager import disable_plugin
+
+    click.echo("Disabling claw-llm-doctor plugin...")
+    disable_plugin(verbose=True, remove_files=remove)
+
+
+@main.command()
+def status() -> None:
+    """Show plugin installation status."""
+    from claw_llm_doctor.plugin_manager import plugin_status
+    from rich.console import Console
+    from rich.table import Table
+
+    info = plugin_status()
+    console = Console()
+
+    t = Table(title="Plugin Status", show_header=True, header_style="bold")
+    t.add_column("Property", style="cyan")
+    t.add_column("Value")
+
+    t.add_row("Installed", "[green]yes[/green]" if info["installed"] else "[red]no[/red]")
+    t.add_row("Dependencies", "[green]yes[/green]" if info["has_node_modules"] else "[yellow]missing[/yellow]")
+    t.add_row("Enabled in config", "[green]yes[/green]" if info["enabled"] else "[red]no[/red]")
+    t.add_row("In allow list", "[green]yes[/green]" if info["in_allow_list"] else "[yellow]no[/yellow]")
+    if info["path"]:
+        t.add_row("Plugin path", info["path"])
+    t.add_row("Config file", info["config_file"])
+
+    console.print(t)
+
+    if not info["installed"]:
+        console.print("\n  Run [cyan]claw-doctor enable[/cyan] to install the plugin.")
+
+
+# -- Analysis commands -----------------------------------------------------
 
 
 @main.command()
 @source_options
 def routing(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 1: Analyze LM routing (Primary/Fallback, success rates, errors)."""
-    from analyzers.routing import analyze_routing
-    from reporters.terminal import print_routing
+    from claw_llm_doctor.analyzers.routing import analyze_routing
+    from claw_llm_doctor.reporters.terminal import print_routing
 
     primary_model = primary_model or _detect_primary_model()
     records = load_records(log_dir, log_file)
@@ -131,8 +183,8 @@ def routing(log_dir, log_file, session_filter, token_method, output_format, outp
 @source_options
 def context(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3a: Analyze context window composition and utilization."""
-    from analyzers.context import analyze_context
-    from reporters.terminal import print_context
+    from claw_llm_doctor.analyzers.context import analyze_context
+    from claw_llm_doctor.reporters.terminal import print_context
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
@@ -146,8 +198,8 @@ def context(log_dir, log_file, session_filter, token_method, output_format, outp
 @source_options
 def prompt_order(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3b: Analyze system prompt section ordering."""
-    from analyzers.prompt_order import analyze_prompt_order
-    from reporters.terminal import print_prompt_order
+    from claw_llm_doctor.analyzers.prompt_order import analyze_prompt_order
+    from claw_llm_doctor.reporters.terminal import print_prompt_order
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
@@ -161,8 +213,8 @@ def prompt_order(log_dir, log_file, session_filter, token_method, output_format,
 @source_options
 def prompt_compression(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3c: Analyze system prompt compression and content loss."""
-    from analyzers.prompt_compression import analyze_compression
-    from reporters.terminal import print_compression
+    from claw_llm_doctor.analyzers.prompt_compression import analyze_compression
+    from claw_llm_doctor.reporters.terminal import print_compression
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
@@ -176,8 +228,8 @@ def prompt_compression(log_dir, log_file, session_filter, token_method, output_f
 @source_options
 def thinking(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Layer 3d: Analyze thinking process separation and leakage."""
-    from analyzers.thinking import analyze_thinking
-    from reporters.terminal import print_thinking
+    from claw_llm_doctor.analyzers.thinking import analyze_thinking
+    from claw_llm_doctor.reporters.terminal import print_thinking
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
@@ -191,11 +243,11 @@ def thinking(log_dir, log_file, session_filter, token_method, output_format, out
 @source_options
 def full(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Run all analysis layers and generate a complete report."""
-    from analyzers.routing import analyze_routing
-    from analyzers.context import analyze_context
-    from analyzers.prompt_order import analyze_prompt_order
-    from analyzers.prompt_compression import analyze_compression
-    from analyzers.thinking import analyze_thinking
+    from claw_llm_doctor.analyzers.routing import analyze_routing
+    from claw_llm_doctor.analyzers.context import analyze_context
+    from claw_llm_doctor.analyzers.prompt_order import analyze_prompt_order
+    from claw_llm_doctor.analyzers.prompt_compression import analyze_compression
+    from claw_llm_doctor.analyzers.thinking import analyze_thinking
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
@@ -216,7 +268,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
         think_reports.append(analyze_thinking(session, token_method=token_method))
 
     if output_format == "json":
-        from reporters.json_report import build_full_json, write_json
+        from claw_llm_doctor.reporters.json_report import build_full_json, write_json
 
         data = build_full_json(
             routing=routing_report,
@@ -228,7 +280,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
         write_json(data, output_path)
 
     elif output_format == "html":
-        from reporters.html import generate_html, write_html
+        from claw_llm_doctor.reporters.html import generate_html, write_html
 
         html = generate_html(
             routing=routing_report,
@@ -242,7 +294,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
         click.echo(f"HTML report written to {path}")
 
     else:
-        from reporters.terminal import print_full_report
+        from claw_llm_doctor.reporters.terminal import print_full_report
 
         for i, session in enumerate(sessions):
             print_full_report(
@@ -258,7 +310,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
 @source_options
 def replay(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Replay a session as a human-readable conversation timeline."""
-    from reporters.terminal import print_replay
+    from claw_llm_doctor.reporters.terminal import print_replay
 
     if not session_filter:
         click.echo("Error: --session is required for replay", err=True)

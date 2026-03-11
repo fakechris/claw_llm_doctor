@@ -1,0 +1,49 @@
+[project]
+name = "claw-llm-doctor"
+version = "0.1.0"
+description = "Diagnostic toolkit for OpenClaw — intercept, record, and analyze LLM Provider calls"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "fakechris" },
+]
+keywords = ["openclaw", "llm", "diagnostics", "observability", "ai-agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+    "orjson>=3.9",
+]
+
+[project.optional-dependencies]
+tiktoken = ["tiktoken"]
+
+[project.scripts]
+claw-doctor = "claw_llm_doctor.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/fakechris/claw_llm_doctor"
+Repository = "https://github.com/fakechris/claw_llm_doctor"
+Issues = "https://github.com/fakechris/claw_llm_doctor/issues"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"claw_llm_doctor._plugin" = ["**/*"]

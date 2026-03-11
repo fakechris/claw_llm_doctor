@@ -11,10 +11,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from loader import Record, Session
+from claw_llm_doctor.loader import Record, Session
 
 
-# ── Section detection ─────────────────────────────────────────────────────
+# -- Section detection -----------------------------------------------------
 
 # Known markers/delimiters used by OpenClaw in system prompts.
 # These patterns identify the boundaries between sections.
@@ -41,7 +41,7 @@ class PromptSection:
 
     @property
     def content_preview(self) -> str:
-        """Not stored — just for the hash. Use raw prompt to reconstruct."""
+        """Not stored -- just for the hash. Use raw prompt to reconstruct."""
         return ""
 
 
@@ -55,12 +55,12 @@ class TurnPromptStructure:
 
     @property
     def order_signature(self) -> str:
-        """Ordered label sequence — used to detect reordering."""
+        """Ordered label sequence -- used to detect reordering."""
         return " -> ".join(s.label for s in self.sections)
 
     @property
     def content_signature(self) -> str:
-        """Hash of all section hashes — used to detect content changes."""
+        """Hash of all section hashes -- used to detect content changes."""
         combined = "|".join(f"{s.label}:{s.content_hash}" for s in self.sections)
         return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
@@ -81,7 +81,7 @@ class PromptOrderReport:
         return len(self.order_changes) == 0
 
 
-# ── Analysis ──────────────────────────────────────────────────────────────
+# -- Analysis --------------------------------------------------------------
 
 
 def extract_system_text(record: Record) -> str | None:
@@ -95,7 +95,7 @@ def extract_system_text(record: Record) -> str | None:
     if isinstance(system, str):
         return system
     if isinstance(system, list):
-        # Array of content blocks — concatenate text parts
+        # Array of content blocks -- concatenate text parts
         parts = []
         for block in system:
             if isinstance(block, dict) and block.get("type") == "text":
@@ -115,7 +115,7 @@ def detect_sections(text: str) -> list[PromptSection]:
             matches.append((label, m.start()))
 
     if not matches:
-        # No recognizable sections — treat entire text as one section
+        # No recognizable sections -- treat entire text as one section
         h = hashlib.sha256(text.encode()).hexdigest()[:16]
         return [PromptSection(label="UNKNOWN", start_pos=0, end_pos=len(text), content_hash=h, char_length=len(text))]
 
