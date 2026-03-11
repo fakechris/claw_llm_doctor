@@ -13,19 +13,19 @@ Diagnostic toolkit for [OpenClaw](https://github.com/openclaw) -- intercept, rec
 ## Installation
 
 ```bash
-pip install claw-llm-doctor
+pip install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 
 <details>
 <summary>Alternative: install with uv</summary>
 
 ```bash
-uv pip install claw-llm-doctor
+uv pip install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 </details>
 
 <details>
-<summary>Alternative: install from source</summary>
+<summary>Alternative: install from local clone</summary>
 
 ```bash
 git clone https://github.com/fakechris/claw_llm_doctor.git
@@ -33,6 +33,8 @@ cd claw_llm_doctor
 pip install .
 ```
 </details>
+
+> Once published to PyPI, you will also be able to run `pip install claw-llm-doctor`.
 
 ## Quick Start
 

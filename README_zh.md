@@ -13,19 +13,19 @@
 ## 安装
 
 ```bash
-pip install claw-llm-doctor
+pip install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 
 <details>
 <summary>其他方式：使用 uv 安装</summary>
 
 ```bash
-uv pip install claw-llm-doctor
+uv pip install git+https://github.com/fakechris/claw_llm_doctor.git
 ```
 </details>
 
 <details>
-<summary>其他方式：从源码安装</summary>
+<summary>其他方式：从本地源码安装</summary>
 
 ```bash
 git clone https://github.com/fakechris/claw_llm_doctor.git
@@ -33,6 +33,8 @@ cd claw_llm_doctor
 pip install .
 ```
 </details>
+
+> 发布到 PyPI 后，也可以直接运行 `pip install claw-llm-doctor`。
 
 ## 快速开始
 
