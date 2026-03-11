@@ -1,4 +1,4 @@
-"""claw-doctor CLI -- analyze OpenClaw LLM diagnostic logs."""
+"""claw-llm-doctor CLI -- analyze OpenClaw LLM diagnostic logs."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ DEFAULT_LOG_DIR = Path.home() / ".openclaw" / "logs" / "llm-doctor"
 @click.group()
 @click.version_option(version=__version__)
 def main() -> None:
-    """claw-doctor -- diagnose OpenClaw LLM Provider behaviour."""
+    """claw-llm-doctor -- diagnose OpenClaw LLM Provider behaviour."""
 
 
 # -- Shared options --------------------------------------------------------
@@ -96,7 +96,7 @@ def load_records(log_dir, log_file):
     if not directory.exists():
         click.echo(f"Error: log directory not found: {directory}", err=True)
         click.echo("Is the claw-llm-doctor plugin installed and has it captured any data?", err=True)
-        click.echo("Run 'claw-doctor enable' to install the plugin.", err=True)
+        click.echo("Run 'claw-llm-doctor enable' to install the plugin.", err=True)
         sys.exit(1)
     return load_dir(directory)
 
@@ -158,7 +158,7 @@ def status() -> None:
     console.print(t)
 
     if not info["installed"]:
-        console.print("\n  Run [cyan]claw-doctor enable[/cyan] to install the plugin.")
+        console.print("\n  Run [cyan]claw-llm-doctor enable[/cyan] to install the plugin.")
 
 
 # -- Analysis commands -----------------------------------------------------
@@ -241,6 +241,21 @@ def thinking(log_dir, log_file, session_filter, token_method, output_format, out
 
 @main.command()
 @source_options
+def performance(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
+    """Layer 4: Analyze LLM performance (latency, throughput, cache efficiency)."""
+    from claw_llm_doctor.analyzers.performance import analyze_performance
+    from claw_llm_doctor.reporters.terminal import print_performance
+
+    records = load_records(log_dir, log_file)
+    sessions = filter_sessions(group_sessions(records), session_filter)
+
+    for session in sessions:
+        report = analyze_performance(session)
+        print_performance(report)
+
+
+@main.command()
+@source_options
 def full(log_dir, log_file, session_filter, token_method, output_format, output_path, primary_model) -> None:
     """Run all analysis layers and generate a complete report."""
     from claw_llm_doctor.analyzers.routing import analyze_routing
@@ -248,6 +263,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
     from claw_llm_doctor.analyzers.prompt_order import analyze_prompt_order
     from claw_llm_doctor.analyzers.prompt_compression import analyze_compression
     from claw_llm_doctor.analyzers.thinking import analyze_thinking
+    from claw_llm_doctor.analyzers.performance import analyze_performance
 
     records = load_records(log_dir, log_file)
     sessions = filter_sessions(group_sessions(records), session_filter)
@@ -260,12 +276,14 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
     order_reports = []
     compress_reports = []
     think_reports = []
+    perf_reports = []
 
     for session in sessions:
         ctx_reports.append(analyze_context(session, token_method=token_method))
         order_reports.append(analyze_prompt_order(session))
         compress_reports.append(analyze_compression(session, token_method=token_method))
         think_reports.append(analyze_thinking(session, token_method=token_method))
+        perf_reports.append(analyze_performance(session))
 
     if output_format == "json":
         from claw_llm_doctor.reporters.json_report import build_full_json, write_json
@@ -276,6 +294,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
             prompt_orders=order_reports,
             compressions=compress_reports,
             thinkings=think_reports,
+            performances=perf_reports,
         )
         write_json(data, output_path)
 
@@ -288,6 +307,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
             prompt_orders=order_reports,
             compressions=compress_reports,
             thinkings=think_reports,
+            performances=perf_reports,
         )
         path = output_path or "report.html"
         write_html(html, path)
@@ -303,6 +323,7 @@ def full(log_dir, log_file, session_filter, token_method, output_format, output_
                 prompt_order=order_reports[i],
                 compression=compress_reports[i],
                 thinking=think_reports[i],
+                performance=perf_reports[i],
             )
 
 

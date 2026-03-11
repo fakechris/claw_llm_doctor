@@ -41,7 +41,7 @@ pip install .
 **1. 启用插件**（自动安装到 OpenClaw Gateway）：
 
 ```bash
-claw-doctor enable
+claw-llm-doctor enable
 ```
 
 该命令会将拦截插件复制到 `~/.openclaw/extensions/`，运行 `npm install`，更新配置并重启守护进程。完成后，所有 LLM 调用都会被自动记录。
@@ -52,33 +52,33 @@ claw-doctor enable
 
 ```bash
 # 列出已捕获的会话
-claw-doctor sessions
+claw-llm-doctor sessions
 
 # 运行完整诊断报告
-claw-doctor full
+claw-llm-doctor full
 
 # 生成 HTML 报告
-claw-doctor full --format html -o report.html
+claw-llm-doctor full --format html -o report.html
 ```
 
 ## 分析能力
 
 | 命令 | 分析层 | 分析内容 |
 |------|--------|----------|
-| `claw-doctor routing` | LM 路由 | 主模型/备选分流、成功率、错误分类、降级链路、性能衰减检测 |
-| `claw-doctor context` | 上下文 | 每轮 token 分布（系统提示、工具、历史、思维）、利用率健康度、增长曲线 |
-| `claw-doctor prompt-order` | 提示词顺序 | Section 排列稳定性、压缩后的缺失检测 |
-| `claw-doctor prompt-compression` | 压缩分析 | 截断导致的内容丢失、与基线的相似度变化、压缩事件 |
-| `claw-doctor thinking` | 思维过程 | 思维/内容 token 比例、思维泄漏检测（内心独白出现在输出中） |
-| `claw-doctor replay --session KEY` | 回放 | 带颜色标记的对话时间线 |
-| `claw-doctor full` | 全部 | 所有分析层的综合报告 |
+| `claw-llm-doctor routing` | LM 路由 | 主模型/备选分流、成功率、错误分类、降级链路、性能衰减检测 |
+| `claw-llm-doctor context` | 上下文 | 每轮 token 分布（系统提示、工具、历史、思维）、利用率健康度、增长曲线 |
+| `claw-llm-doctor prompt-order` | 提示词顺序 | Section 排列稳定性、压缩后的缺失检测 |
+| `claw-llm-doctor prompt-compression` | 压缩分析 | 截断导致的内容丢失、与基线的相似度变化、压缩事件 |
+| `claw-llm-doctor thinking` | 思维过程 | 思维/内容 token 比例、思维泄漏检测（内心独白出现在输出中） |
+| `claw-llm-doctor replay --session KEY` | 回放 | 带颜色标记的对话时间线 |
+| `claw-llm-doctor full` | 全部 | 所有分析层的综合报告 |
 
 ## 插件管理
 
 ```bash
-claw-doctor enable     # 安装并启用 OpenClaw 插件
-claw-doctor disable    # 禁用（保留文件）；加 --remove 可删除文件
-claw-doctor status     # 查看安装状态
+claw-llm-doctor enable     # 安装并启用 OpenClaw 插件
+claw-llm-doctor disable    # 禁用（保留文件）；加 --remove 可删除文件
+claw-llm-doctor status     # 查看安装状态
 ```
 
 ### 插件配置
@@ -127,7 +127,7 @@ claw-doctor status     # 查看安装状态
 
 ```
 ┌─────────────────────────┐     JSONL      ┌──────────────────┐
-│   OpenClaw Gateway      │ ──────────────> │  claw-doctor CLI │
+│   OpenClaw Gateway      │ ──────────────> │  claw-llm-doctor CLI │
 │   + llm-doctor 插件     │  ~/.openclaw/   │  (Python)        │
 │   (TypeScript)          │  logs/          │                  │
 └─────────────────────────┘                 └──────────────────┘

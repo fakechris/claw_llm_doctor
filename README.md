@@ -41,7 +41,7 @@ pip install .
 **1. Enable the plugin** (auto-installs into OpenClaw Gateway):
 
 ```bash
-claw-doctor enable
+claw-llm-doctor enable
 ```
 
 This copies the interceptor plugin to `~/.openclaw/extensions/`, runs `npm install`, updates your config, and restarts the daemon. That's it -- all LLM calls are now being recorded.
@@ -52,33 +52,33 @@ This copies the interceptor plugin to `~/.openclaw/extensions/`, runs `npm insta
 
 ```bash
 # List captured sessions
-claw-doctor sessions
+claw-llm-doctor sessions
 
 # Run full diagnostic report
-claw-doctor full
+claw-llm-doctor full
 
 # Generate an HTML report
-claw-doctor full --format html -o report.html
+claw-llm-doctor full --format html -o report.html
 ```
 
 ## What It Analyzes
 
 | Command | Layer | What It Reveals |
 |---------|-------|-----------------|
-| `claw-doctor routing` | LM Routing | Primary/fallback split, success rates, error classification, fallback chains, degradation detection |
-| `claw-doctor context` | Context | Token breakdown per turn (system, tools, history, thinking), utilization health, growth curve |
-| `claw-doctor prompt-order` | Prompt Order | Section ordering stability, missing sections after compaction |
-| `claw-doctor prompt-compression` | Compression | Content loss from truncation, similarity vs baseline, compaction events |
-| `claw-doctor thinking` | Thinking | Thinking/content ratio, leakage detection (inner monologue in output) |
-| `claw-doctor replay --session KEY` | Replay | Human-readable conversation timeline with color-coded events |
-| `claw-doctor full` | All | Combined report across all layers |
+| `claw-llm-doctor routing` | LM Routing | Primary/fallback split, success rates, error classification, fallback chains, degradation detection |
+| `claw-llm-doctor context` | Context | Token breakdown per turn (system, tools, history, thinking), utilization health, growth curve |
+| `claw-llm-doctor prompt-order` | Prompt Order | Section ordering stability, missing sections after compaction |
+| `claw-llm-doctor prompt-compression` | Compression | Content loss from truncation, similarity vs baseline, compaction events |
+| `claw-llm-doctor thinking` | Thinking | Thinking/content ratio, leakage detection (inner monologue in output) |
+| `claw-llm-doctor replay --session KEY` | Replay | Human-readable conversation timeline with color-coded events |
+| `claw-llm-doctor full` | All | Combined report across all layers |
 
 ## Plugin Management
 
 ```bash
-claw-doctor enable     # Install & enable the OpenClaw plugin
-claw-doctor disable    # Disable (keeps files); add --remove to delete
-claw-doctor status     # Check installation state
+claw-llm-doctor enable     # Install & enable the OpenClaw plugin
+claw-llm-doctor disable    # Disable (keeps files); add --remove to delete
+claw-llm-doctor status     # Check installation state
 ```
 
 ### Plugin Configuration
@@ -127,7 +127,7 @@ All analysis commands accept:
 
 ```
 ┌─────────────────────────┐     JSONL      ┌──────────────────┐
-│   OpenClaw Gateway      │ ──────────────> │  claw-doctor CLI │
+│   OpenClaw Gateway      │ ──────────────> │  claw-llm-doctor CLI │
 │   + llm-doctor plugin   │  ~/.openclaw/   │  (Python)        │
 │   (TypeScript)          │  logs/          │                  │
 └─────────────────────────┘                 └──────────────────┘

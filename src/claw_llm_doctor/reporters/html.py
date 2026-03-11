@@ -10,12 +10,14 @@ from claw_llm_doctor.analyzers.context import ContextReport
 from claw_llm_doctor.analyzers.prompt_order import PromptOrderReport
 from claw_llm_doctor.analyzers.prompt_compression import CompressionReport
 from claw_llm_doctor.analyzers.thinking import ThinkingReport
+from claw_llm_doctor.analyzers.performance import PerformanceReport
 from claw_llm_doctor.reporters.json_report import (
     routing_to_dict,
     context_to_dict,
     prompt_order_to_dict,
     compression_to_dict,
     thinking_to_dict,
+    performance_to_dict,
 )
 from claw_llm_doctor.utils.tokens import format_tokens
 
@@ -317,17 +319,36 @@ def render_thinking(report: ThinkingReport) -> str:
 
     # Leakage details
     if report.turns_with_leakage > 0:
-        html += "<h3>Leakage Patterns</h3><table><tr><th>Pattern</th><th class='num'>Count</th></tr>"
+        category_labels = {
+            "tag_leak": "Tag Leak",
+            "en_monologue": "EN Monologue",
+            "cn_monologue": "CN Monologue",
+            "interleave": "Token Interleaving",
+        }
+
+        if report.leakage_category_counts:
+            html += "<h3>Leakage by Category</h3><table><tr><th>Category</th><th class='num'>Count</th></tr>"
+            for cat, count in sorted(report.leakage_category_counts.items(), key=lambda x: -x[1]):
+                html += f"<tr><td><span class='tag tag-red'>{_esc(category_labels.get(cat, cat))}</span></td><td class='num'>{count}</td></tr>"
+            html += "</table>"
+
+        html += "<h3>Leakage Pattern Details</h3><table><tr><th>Pattern</th><th>Category</th><th class='num'>Count</th></tr>"
+        pattern_cats: dict[str, str] = {}
+        for turn in report.turns:
+            for li in turn.leakage_instances:
+                pattern_cats[li.pattern_name] = li.category
         for name, count in sorted(report.leakage_pattern_counts.items(), key=lambda x: -x[1]):
-            html += f"<tr><td><span class='tag tag-red'>{_esc(name)}</span></td><td class='num'>{count}</td></tr>"
+            cat = pattern_cats.get(name, "?")
+            html += f"<tr><td><span class='tag tag-red'>{_esc(name)}</span></td><td>{_esc(category_labels.get(cat, cat))}</td><td class='num'>{count}</td></tr>"
         html += "</table>"
 
         html += "<h3>Leakage Examples</h3>"
         for turn in report.turns:
             if turn.has_leakage:
+                model_str = f" model={_esc(turn.model)}" if turn.model else ""
                 for li in turn.leakage_instances[:3]:
-                    html += f'<div class="leak-example">Turn {turn.turn_index} '
-                    html += f'[{_esc(li.pattern_name)}]: <code>{_esc(li.matched_text)}</code><br>'
+                    html += f'<div class="leak-example">Turn {turn.turn_index}{model_str} '
+                    html += f'[{_esc(li.category)}/{_esc(li.pattern_name)}]: <code>{_esc(li.matched_text)}</code><br>'
                     html += f'{_esc(li.context)}</div>'
 
     # Per-turn table
@@ -349,6 +370,37 @@ def render_thinking(report: ThinkingReport) -> str:
     return html
 
 
+def render_performance(report: PerformanceReport) -> str:
+    d = performance_to_dict(report)
+    html = f'<h2>Layer 4: Performance \u2014 {_esc(report.session_key)}</h2><div class="card">'
+    metrics = [
+        ("Calls", d["total_calls"]),
+        ("With Timing", d["calls_with_duration"]),
+        ("Avg Latency", f"{d['avg_latency_ms']:.0f}ms"),
+        ("Avg tok/s", f"{d['avg_throughput_tps']:.1f}"),
+        ("Cache Hit", pct(d["overall_cache_hit_rate"])),
+    ]
+    for label, val in metrics:
+        html += f'<div class="metric"><div class="label">{label}</div><div class="value">{val}</div></div>'
+    html += "</div>"
+
+    if d["by_model"]:
+        html += "<h3>By Model</h3><table><tr><th>Model</th><th class='num'>Calls</th>"
+        html += "<th class='num'>Avg Lat.</th><th class='num'>p50</th><th class='num'>p95</th>"
+        html += "<th class='num'>p99</th><th class='num'>Avg tok/s</th><th class='num'>Cache Hit</th></tr>"
+        for model, mp in d["by_model"].items():
+            html += f"<tr><td>{_esc(model)}</td><td class='num'>{mp['call_count']}</td>"
+            html += f"<td class='num'>{mp['avg_latency_ms']:.0f}ms</td>"
+            html += f"<td class='num'>{mp['p50_latency_ms']:.0f}ms</td>"
+            html += f"<td class='num'>{mp['p95_latency_ms']:.0f}ms</td>"
+            html += f"<td class='num'>{mp['p99_latency_ms']:.0f}ms</td>"
+            html += f"<td class='num'>{mp['avg_throughput_tps']:.1f}</td>"
+            html += f"<td class='num'>{pct(mp['cache_hit_rate'])}</td></tr>"
+        html += "</table>"
+
+    return html
+
+
 # -- Public API ------------------------------------------------------------
 
 
@@ -358,6 +410,7 @@ def generate_html(
     prompt_orders: list[PromptOrderReport] | None = None,
     compressions: list[CompressionReport] | None = None,
     thinkings: list[ThinkingReport] | None = None,
+    performances: list[PerformanceReport] | None = None,
 ) -> str:
     sections: list[str] = []
 
@@ -375,6 +428,9 @@ def generate_html(
     if thinkings:
         for t in thinkings:
             sections.append(render_thinking(t))
+    if performances:
+        for p in performances:
+            sections.append(render_performance(p))
 
     return HTML_TEMPLATE.replace("{content}", "\n".join(sections))
 
