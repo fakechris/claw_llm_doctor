@@ -117,7 +117,7 @@ def render_routing(report: RoutingReport) -> str:
         html += "<h3>By Model</h3><table><tr><th>Model</th><th class='num'>Total</th>"
         html += "<th class='num'>Success</th><th class='num'>Failure</th></tr>"
         for model, info in d["by_model"].items():
-            html += f"<tr><td>{model}</td><td class='num'>{info['total']}</td>"
+            html += f"<tr><td>{_esc(model)}</td><td class='num'>{info['total']}</td>"
             html += f"<td class='num'>{info['success']}</td><td class='num'>{info['failure']}</td></tr>"
         html += "</table>"
 
@@ -127,9 +127,9 @@ def render_routing(report: RoutingReport) -> str:
         html += "<th>Models</th><th>Example</th></tr>"
         for code, info in sorted(d["errors"].items(), key=lambda x: -x[1]["count"]):
             example = info["examples"][0] if info["examples"] else ""
-            html += f"<tr><td><span class='tag tag-red'>{code}</span></td>"
+            html += f"<tr><td><span class='tag tag-red'>{_esc(code)}</span></td>"
             html += f"<td class='num'>{info['count']}</td>"
-            html += f"<td>{', '.join(info['models'])}</td><td>{_esc(example)}</td></tr>"
+            html += f"<td>{_esc(', '.join(info['models']))}</td><td>{_esc(example)}</td></tr>"
         html += "</table>"
 
     # Session table

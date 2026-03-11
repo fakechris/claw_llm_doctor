@@ -90,6 +90,8 @@ class RoutingReport:
     fallback_calls: int = 0
     unknown_routing: int = 0
 
+    total_success: int = 0
+    total_failure: int = 0
     primary_success: int = 0
     primary_failure: int = 0
     fallback_success: int = 0
@@ -124,7 +126,7 @@ class RoutingReport:
     def overall_success_rate(self) -> float:
         if self.total_calls == 0:
             return 0.0
-        return (self.primary_success + self.fallback_success) / self.total_calls
+        return self.total_success / self.total_calls
 
     @property
     def fallback_trigger_rate(self) -> float:
@@ -362,6 +364,7 @@ def analyze_routing(
 
             # Success/failure
             if call.success:
+                report.total_success += 1
                 session_success += 1
                 if is_primary is True:
                     report.primary_success += 1
@@ -369,6 +372,7 @@ def analyze_routing(
                     report.fallback_success += 1
                 report.success_by_model[model] += 1
             else:
+                report.total_failure += 1
                 if is_primary is True:
                     report.primary_failure += 1
                 elif is_primary is False:
