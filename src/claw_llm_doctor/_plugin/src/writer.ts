@@ -9,7 +9,7 @@ import { redact } from "./redact.js";
  * Async JSONL writer with daily file naming and size-based rotation.
  *
  * Output files: <outputDir>/llm-doctor-YYYY-MM-DD.jsonl
- * Rotated files: <outputDir>/llm-doctor-YYYY-MM-DD.<n>.jsonl
+ * Rotated files: <outputDir>/llm-doctor-YYYY-MM-DD.r<n>.jsonl
  */
 export class JsonlWriter {
   private dir: string;
@@ -44,20 +44,26 @@ export class JsonlWriter {
     let line = JSON.stringify(data);
 
     if (this.maxPayloadSize > 0 && line.length > this.maxPayloadSize) {
-      // Truncate the serialised line and mark it
-      line = line.slice(0, this.maxPayloadSize);
-      // Ensure it's still parseable by wrapping in an envelope
       const truncated: Record<string, unknown> = {
         type: (record as DoctorRecord).type,
         ts: (record as DoctorRecord).ts,
         _truncated: true,
-        _originalBytes: JSON.stringify(data).length,
+        _originalBytes: line.length,
       };
       line = JSON.stringify(truncated);
     }
 
     this.buffer.push(line);
     this.scheduleFlush();
+  }
+
+  /** Flush remaining buffer and cancel pending timers. */
+  async close(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    await this.flush();
   }
 
   // ---- internals ----
@@ -104,10 +110,12 @@ export class JsonlWriter {
       const s = await stat(filePath);
       if (s.size < this.maxSize) return;
 
-      // Find the next rotation index
+      // Rotate to llm-doctor-YYYY-MM-DD.r<n>.jsonl so the Python loader's
+      // llm-doctor-*.jsonl glob still picks up rotated files.
+      const base = filePath.replace(/\.jsonl$/, "");
       let idx = 1;
-      while (existsSync(`${filePath}.${idx}`)) idx++;
-      await rename(filePath, `${filePath}.${idx}`);
+      while (existsSync(`${base}.r${idx}.jsonl`)) idx++;
+      await rename(filePath, `${base}.r${idx}.jsonl`);
     } catch {
       // File doesn't exist yet — nothing to rotate
     }

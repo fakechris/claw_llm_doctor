@@ -270,10 +270,11 @@ const plugin = {
         }, 5 * 60 * 1000);
         api.logger.info("llm-doctor: service started");
       },
-      stop() {
+      async stop() {
         if (inputTsSweepTimer) clearInterval(inputTsSweepTimer);
         inputTimestamps.clear();
         unsubDiag();
+        await writer.close();
         api.logger.info("llm-doctor: service stopped");
       },
     });

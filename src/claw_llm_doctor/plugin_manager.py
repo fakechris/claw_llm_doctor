@@ -13,7 +13,18 @@ OPENCLAW_DIR = Path.home() / ".openclaw"
 EXTENSIONS_DIR = OPENCLAW_DIR / "extensions"
 PLUGIN_ID = "claw-llm-doctor"
 PLUGIN_DEST = EXTENSIONS_DIR / PLUGIN_ID
-CONFIG_FILE = OPENCLAW_DIR / "openclaw.json"
+
+
+def _detect_config_file() -> Path:
+    """Return the active OpenClaw config file path.
+
+    Checks openclaw.json first, then config.json. Falls back to openclaw.json.
+    """
+    for name in ("openclaw.json", "config.json"):
+        p = OPENCLAW_DIR / name
+        if p.exists():
+            return p
+    return OPENCLAW_DIR / "openclaw.json"
 
 
 def _get_bundled_plugin_dir() -> Path:
@@ -24,20 +35,24 @@ def _get_bundled_plugin_dir() -> Path:
     return Path(str(ref))
 
 
-def _read_config() -> dict:
-    """Read the OpenClaw config, returning an empty dict if missing."""
-    if not CONFIG_FILE.exists():
-        return {}
+def _read_config() -> tuple[Path, dict]:
+    """Read the OpenClaw config, returning (path, data).
+
+    Returns an empty dict if the file is missing or unreadable.
+    """
+    config_file = _detect_config_file()
+    if not config_file.exists():
+        return config_file, {}
     try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        return config_file, json.loads(config_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {}
+        return config_file, {}
 
 
-def _write_config(cfg: dict) -> None:
+def _write_config(config_file: Path, cfg: dict) -> None:
     """Write config back, creating parent dirs if needed."""
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
         json.dumps(cfg, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
@@ -93,6 +108,7 @@ def enable_plugin(*, verbose: bool = True) -> bool:
         console.print(f"  Copied plugin to [cyan]{PLUGIN_DEST}[/cyan]")
 
     # 2. npm install
+    npm_ok = True
     if verbose:
         console.print("  Running [cyan]npm install[/cyan]...")
     try:
@@ -104,17 +120,23 @@ def enable_plugin(*, verbose: bool = True) -> bool:
             timeout=120,
         )
         if result.returncode != 0:
-            console.print(f"[yellow]Warning:[/yellow] npm install exited with code {result.returncode}")
+            npm_ok = False
+            console.print(f"[red]Error:[/red] npm install exited with code {result.returncode}")
             if result.stderr:
                 console.print(f"  [dim]{result.stderr.strip()[:500]}[/dim]")
     except FileNotFoundError:
-        console.print("[yellow]Warning:[/yellow] npm not found. Please run 'npm install' manually in:")
-        console.print(f"  [cyan]{PLUGIN_DEST}[/cyan]")
+        npm_ok = False
+        console.print("[red]Error:[/red] npm not found. Please install Node.js >= 22.12.0 and retry.")
     except subprocess.TimeoutExpired:
-        console.print("[yellow]Warning:[/yellow] npm install timed out")
+        npm_ok = False
+        console.print("[red]Error:[/red] npm install timed out")
+
+    if not npm_ok and not (PLUGIN_DEST / "node_modules").exists():
+        console.print("[red]Plugin dependencies missing. Enable aborted.[/red]")
+        return False
 
     # 3. Update config
-    cfg = _read_config()
+    config_file, cfg = _read_config()
     plugins = cfg.setdefault("plugins", {})
     allow = plugins.setdefault("allow", [])
     if PLUGIN_ID not in allow:
@@ -122,10 +144,10 @@ def enable_plugin(*, verbose: bool = True) -> bool:
     entries = plugins.setdefault("entries", {})
     entries[PLUGIN_ID] = entries.get(PLUGIN_ID, {})
     entries[PLUGIN_ID]["enabled"] = True
-    _write_config(cfg)
+    _write_config(config_file, cfg)
 
     if verbose:
-        console.print(f"  Updated [cyan]{CONFIG_FILE}[/cyan]")
+        console.print(f"  Updated [cyan]{config_file}[/cyan]")
 
     # 4. Restart daemon
     _restart_daemon(console, verbose)
@@ -147,14 +169,14 @@ def disable_plugin(*, verbose: bool = True, remove_files: bool = False) -> bool:
     console = Console()
 
     # 1. Update config
-    cfg = _read_config()
+    config_file, cfg = _read_config()
     plugins = cfg.get("plugins", {})
     entries = plugins.get("entries", {})
     if PLUGIN_ID in entries:
         entries[PLUGIN_ID]["enabled"] = False
-        _write_config(cfg)
+        _write_config(config_file, cfg)
         if verbose:
-            console.print(f"  Disabled plugin in [cyan]{CONFIG_FILE}[/cyan]")
+            console.print(f"  Disabled plugin in [cyan]{config_file}[/cyan]")
     else:
         if verbose:
             console.print("  Plugin was not configured.")
@@ -179,7 +201,7 @@ def plugin_status() -> dict:
     installed = PLUGIN_DEST.exists()
     has_node_modules = (PLUGIN_DEST / "node_modules").exists() if installed else False
 
-    cfg = _read_config()
+    config_file, cfg = _read_config()
     plugins = cfg.get("plugins", {})
     entries = plugins.get("entries", {})
     plugin_cfg = entries.get(PLUGIN_ID, {})
@@ -192,14 +214,14 @@ def plugin_status() -> dict:
         "path": str(PLUGIN_DEST) if installed else None,
         "enabled": enabled,
         "in_allow_list": in_allow,
-        "config_file": str(CONFIG_FILE),
+        "config_file": str(config_file),
     }
 
 
 def _copy_plugin(src: Path, dest: Path) -> None:
     """Copy plugin files from src to dest, skipping __pycache__ and node_modules."""
     for item in src.iterdir():
-        if item.name in ("node_modules", "__pycache__", ".DS_Store"):
+        if item.name in ("node_modules", "__pycache__", ".DS_Store", "__init__.py"):
             continue
         target = dest / item.name
         if item.is_dir():

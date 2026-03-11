@@ -151,6 +151,36 @@ claw-doctor status     # 查看安装状态
 
 插件拦截 `llm_input`、`llm_output`、`before_tool_call`、`after_tool_call`、`agent_start`、`agent_end`、`compaction` 和 `diagnostic.usage` 事件。每个事件以单行 JSONL 格式写入，包含时间戳、会话上下文和可选载荷。
 
+## JSONL 记录类型
+
+每条记录包含顶层字段 `type`、`ts`、`sessionKey`、`sessionId`、`agentId`。部分类型还包含 `payload` 对象用于存储捕获的完整内容。
+
+| 类型 | 关键字段（顶层，除非另行说明） |
+|------|-------------------------------|
+| `model.resolve` | prompt（模型选择前的路由决策） |
+| `llm.input` | model, provider, runId, payload.{systemPrompt, prompt, historyMessages, imagesCount} |
+| `llm.output` | model, provider, runId, success, durationMs, stopReason, payload.{assistantTexts, lastAssistant}, usage.{input, output, cacheRead, cacheWrite, total} |
+| `tool.start` | toolName, toolCallId, params |
+| `tool.end` | toolName, toolCallId, success, error, durationMs |
+| `agent.start` | prompt, messageCount |
+| `agent.end` | success, durationMs, error, messageCount |
+| `compaction.before` | messageCount, compactingCount, tokenCount |
+| `compaction.after` | messageCount, compactedCount, tokenCount |
+| `diagnostic.usage` | model, provider, contextLimit, contextUsed, inputTokens, outputTokens, costUsd, durationMs |
+
+### 使用 jq 快速查询
+
+```bash
+# 统计每个模型的 LLM 调用次数
+jq -r 'select(.type=="llm.input") | .model' ~/.openclaw/logs/llm-doctor/*.jsonl | sort | uniq -c
+
+# 查找所有错误
+jq 'select(.type=="llm.output" and .success==false)' ~/.openclaw/logs/llm-doctor/*.jsonl
+
+# 每次调用的 token 用量
+jq 'select(.usage) | {model, input: .usage.input, output: .usage.output}' ~/.openclaw/logs/llm-doctor/*.jsonl
+```
+
 ## 环境要求
 
 - Python >= 3.10

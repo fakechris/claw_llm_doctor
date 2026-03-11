@@ -153,16 +153,20 @@ The plugin intercepts `llm_input`, `llm_output`, `before_tool_call`, `after_tool
 
 ## JSONL Record Types
 
-| Type | Key Fields |
-|------|------------|
-| `llm.input` | model, provider, systemPrompt, prompt, historyMessages |
-| `llm.output` | model, provider, assistantTexts, lastAssistant, usage, durationMs |
-| `tool.start` | toolName, params |
-| `tool.end` | toolName, success, error, durationMs |
+Every record has top-level `type`, `ts`, `sessionKey`, `sessionId`, and `agentId` fields. Some types carry an additional `payload` object for captured content.
+
+| Type | Key Fields (top-level unless noted) |
+|------|--------------------------------------|
+| `model.resolve` | prompt (routing decision before model selection) |
+| `llm.input` | model, provider, runId, payload.{systemPrompt, prompt, historyMessages, imagesCount} |
+| `llm.output` | model, provider, runId, success, durationMs, stopReason, payload.{assistantTexts, lastAssistant}, usage.{input, output, cacheRead, cacheWrite, total} |
+| `tool.start` | toolName, toolCallId, params |
+| `tool.end` | toolName, toolCallId, success, error, durationMs |
 | `agent.start` | prompt, messageCount |
-| `agent.end` | success, durationMs, error |
-| `compaction.before/after` | messageCount, tokenCount |
-| `diagnostic.usage` | contextLimit, contextUsed, inputTokens, outputTokens, costUsd |
+| `agent.end` | success, durationMs, error, messageCount |
+| `compaction.before` | messageCount, compactingCount, tokenCount |
+| `compaction.after` | messageCount, compactedCount, tokenCount |
+| `diagnostic.usage` | model, provider, contextLimit, contextUsed, inputTokens, outputTokens, costUsd, durationMs |
 
 ### Quick-query with jq
 
