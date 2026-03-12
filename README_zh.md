@@ -6,75 +6,131 @@
 
 [English](README.md) | [中文](README_zh.md)
 
-[OpenClaw](https://github.com/openclaw) 诊断工具 -- 拦截、记录并分析 Agent 发出的每一次 LLM Provider 调用。
+**你的 AI Agent 在烧钱，而你完全看不到原因。**
 
-**claw-llm-doctor** 通过 OpenClaw Gateway 插件捕获完整的请求/响应，并提供 CLI 分析路由决策、上下文窗口组成、系统提示词完整性和思维过程质量。
+每一次 [OpenClaw](https://github.com/openclaw) Agent 发出的 LLM 调用都是黑盒：哪个模型在处理？是不是悄悄降级到了备选模型？上下文窗口快满了吗？模型的"思维过程"有没有泄露到用户可见的回复里？Prompt Cache 命中率到底是多少？
 
-## 安装
-
-推荐使用 [uv](https://docs.astral.sh/uv/) 全局安装：
+**claw-llm-doctor** 一条命令安装，一条命令看透所有问题。
 
 ```bash
-uv tool install git+https://github.com/fakechris/claw_llm_doctor.git
+pip install claw-llm-doctor
+claw-llm-doctor enable   # 挂载到 OpenClaw Gateway
+claw-llm-doctor full     # 一键诊断报告
 ```
 
-<details>
-<summary>其他方式：使用 pipx 安装</summary>
+## 你会得到什么
 
-```bash
-pipx install git+https://github.com/fakechris/claw_llm_doctor.git
+> [**查看 Demo 报告**](docs/demo-report.html)（自包含 HTML，无需服务器）
+
+### 执行摘要 — 一眼看清全局
+
 ```
-</details>
+  Analyzed 7 session(s), 224 LLM calls over 23.5h
 
-<details>
-<summary>其他方式：在虚拟环境中安装</summary>
+               Key Metrics
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Metric                   ┃     Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Total requests           │       224 │
+│ Success rate             │     52.7% │
+│ Input tokens             │      6.3M │
+│ Output tokens            │     65.8k │
+│ Cache read tokens        │      7.7M │
+│ Cache hit rate           │     55.0% │
+│ Avg latency (success)    │   69869ms │
+│ Avg throughput (success) │ 7.4 tok/s │
+└──────────────────────────┴───────────┘
 
-```bash
-git clone https://github.com/fakechris/claw_llm_doctor.git
-cd claw_llm_doctor
-uv venv && source .venv/bin/activate
-uv pip install .
+  Findings:
+    • 106 failed call(s) (47.3% failure rate)
+    • 7 fallback chain(s) detected
+    • 2 turn(s) with thinking leakage
+    • Model doubao-seed-2.0-code has 82.5% failure rate (99/120)
 ```
-</details>
 
-> 发布到 PyPI 后：`uv tool install claw-llm-doctor` 或 `pipx install claw-llm-doctor`。
+### 5 层分析 — 覆盖每一个盲区
+
+| 分析层 | 能发现什么 | 为什么重要 |
+|--------|-----------|-----------|
+| **路由** | 主模型/备选分流、成功率、错误分类、降级链路 | "备选模型 82% 的调用在静默失败" |
+| **上下文** | 每轮 Token 分布、利用率曲线、压缩事件 | "第 47 轮上下文窗口达到 95%——质量就是从这里开始劣化的" |
+| **提示词完整性** | Section 排列稳定性、截断后的内容丢失 | "工具定义在压缩后消失了" |
+| **思维过程** | 思维/内容比例、4 类泄漏检测 | "模型的内心独白泄露到了 3 条用户可见的回复中" |
+| **性能** | 端到端延迟、吞吐量、每模型 Cache 命中率 | "主模型 7.4 tok/s，备选模型降到 2.1" |
+
+### 输出格式
+
+- **终端** — Rich 表格 + 彩色标记，适合快速排查
+- **HTML** — 自包含暗色主题报告，分享给团队
+- **JSON** — 结构化数据，接入仪表盘和自动化流水线
 
 ## 快速开始
 
-**1. 启用插件**（自动安装到 OpenClaw Gateway）：
+**1. 安装：**
+
+```bash
+pip install claw-llm-doctor
+# 或
+uv tool install claw-llm-doctor
+```
+
+**2. 启用插件**（自动安装到 OpenClaw Gateway）：
 
 ```bash
 claw-llm-doctor enable
 ```
 
-该命令会将拦截插件复制到 `~/.openclaw/extensions/`，运行 `npm install`，更新配置并重启守护进程。完成后，所有 LLM 调用都会被自动记录。
+自动将拦截插件复制到 `~/.openclaw/extensions/`，运行 `npm install`，更新配置并重启守护进程。完成后所有 LLM 调用都会被记录。
 
-**2. 正常使用 OpenClaw。** 插件会将 JSONL 日志写入 `~/.openclaw/logs/llm-doctor/`。
+**3. 正常使用 OpenClaw。** 插件将 JSONL 日志写入 `~/.openclaw/logs/llm-doctor/`。
 
-**3. 分析数据：**
+**4. 诊断：**
 
 ```bash
-# 列出已捕获的会话
-claw-llm-doctor sessions
-
-# 运行完整诊断报告
+# 完整诊断（默认最近 24 小时）
 claw-llm-doctor full
 
-# 生成 HTML 报告
+# 生成可分享的 HTML 报告
 claw-llm-doctor full --format html -o report.html
+
+# 分层分析
+claw-llm-doctor routing
+claw-llm-doctor performance
+claw-llm-doctor thinking
+
+# 回放某个会话
+claw-llm-doctor replay --session <KEY>
+
+# 导出原始数据
+claw-llm-doctor export --session <KEY> -o session.json
 ```
 
-## 分析能力
+## 命令列表
 
-| 命令 | 分析层 | 分析内容 |
-|------|--------|----------|
-| `claw-llm-doctor routing` | LM 路由 | 主模型/备选分流、成功率、错误分类、降级链路、性能衰减检测 |
-| `claw-llm-doctor context` | 上下文 | 每轮 token 分布（系统提示、工具、历史、思维）、利用率健康度、增长曲线 |
-| `claw-llm-doctor prompt-order` | 提示词顺序 | Section 排列稳定性、压缩后的缺失检测 |
-| `claw-llm-doctor prompt-compression` | 压缩分析 | 截断导致的内容丢失、与基线的相似度变化、压缩事件 |
-| `claw-llm-doctor thinking` | 思维过程 | 思维/内容 token 比例、思维泄漏检测（内心独白出现在输出中） |
-| `claw-llm-doctor replay --session KEY` | 回放 | 带颜色标记的对话时间线 |
-| `claw-llm-doctor full` | 全部 | 所有分析层的综合报告 |
+| 命令 | 分析层 | 说明 |
+|------|--------|------|
+| `routing` | LM 路由 | 模型路由决策、成功率、错误分类、降级链路 |
+| `context` | 上下文 | 每轮 Token 组成、利用率健康度、增长曲线 |
+| `prompt-order` | 提示词完整性 | Section 排列稳定性、压缩后缺失检测 |
+| `prompt-compression` | 压缩分析 | 截断导致的内容丢失、与基线的相似度变化 |
+| `thinking` | 思维过程 | 思维/内容比例、泄漏检测（内心独白出现在输出中） |
+| `performance` | 性能 | 端到端延迟、吞吐量 (tok/s)、每模型 Cache 命中率 |
+| `full` | 全部 | 含执行摘要的综合报告 |
+| `sessions` | - | 列出所有已捕获的会话 |
+| `replay` | - | 可读的对话时间线 |
+| `export` | - | 导出原始 JSON 记录 |
+
+## 通用选项
+
+```
+--since TIME         起始时间（默认 24h）。'30m', '1h', '2h30m', 'all', 或 ISO 日期时间
+--until TIME         截止时间
+--session KEY        按会话过滤
+--primary-model ID   指定主模型用于路由分类
+--format             terminal（默认）、json 或 html
+-o, --output PATH    输出到文件
+--token-method       char（快速，默认）或 tiktoken（精确）
+```
 
 ## 插件管理
 
@@ -86,7 +142,7 @@ claw-llm-doctor status     # 查看安装状态
 
 ### 插件配置
 
-在 `~/.openclaw/openclaw.json` 中配置插件：
+在 `~/.openclaw/openclaw.json` 中配置：
 
 ```json
 {
@@ -112,68 +168,32 @@ claw-llm-doctor status     # 查看安装状态
 | `maxPayloadSize` | `0` | 最大载荷大小（字节，0 = 不限） |
 | `rotateMaxSize` | `104857600` | 日志轮转阈值（100 MB） |
 
-## 通用选项
-
-所有分析命令支持以下参数：
+## 工作原理
 
 ```
---file PATH          分析单个 JSONL 文件
---log-dir PATH       自定义日志目录
---session KEY        按会话过滤
---since TIME         只包含此时间之后的记录（如 '30m', '1h', '2026-03-11T10:00'）
---until TIME         只包含此时间之前的记录（格式同 --since）
---primary-model ID   指定主模型用于路由分类
---token-method       char（快速，默认）或 tiktoken（精确）
---format             terminal（默认）、json 或 html
--o, --output PATH    输出到文件
-```
-
-## 架构
-
-```
-┌─────────────────────────┐     JSONL      ┌──────────────────┐
+┌─────────────────────────┐     JSONL      ┌──────────────────────┐
 │   OpenClaw Gateway      │ ──────────────> │  claw-llm-doctor CLI │
-│   + llm-doctor 插件     │  ~/.openclaw/   │  (Python)        │
-│   (TypeScript)          │  logs/          │                  │
-└─────────────────────────┘                 └──────────────────┘
-                                                     │
-                                             ┌───────┴───────┐
-                                             │    分析器      │
-                                             │ routing       │
-                                             │ context       │
-                                             │ prompt-order  │
-                                             │ compression   │
-                                             │ thinking      │
-                                             └───────┬───────┘
-                                                     │
-                                             ┌───────┴───────┐
-                                             │    报告器      │
-                                             │ terminal      │
-                                             │ json          │
-                                             │ html          │
-                                             └───────────────┘
+│   + llm-doctor 插件     │  ~/.openclaw/   │  (Python)            │
+│   (TypeScript)          │  logs/          │                      │
+└─────────────────────────┘                 └──────────┬───────────┘
+                                                       │
+                                            ┌──────────┴──────────┐
+                                            │       分析器         │
+                                            │  routing · context  │
+                                            │  prompt · thinking  │
+                                            │    performance      │
+                                            └──────────┬──────────┘
+                                                       │
+                                            ┌──────────┴──────────┐
+                                            │       报告器         │
+                                            │  terminal · html    │
+                                            │       json          │
+                                            └─────────────────────┘
 ```
 
-插件拦截 `llm_input`、`llm_output`、`before_tool_call`、`after_tool_call`、`agent_start`、`agent_end`、`compaction` 和 `diagnostic.usage` 事件。每个事件以单行 JSONL 格式写入，包含时间戳、会话上下文和可选载荷。
+插件拦截 `llm_input`、`llm_output`、`tool_call`、`agent_start/end`、`compaction` 和 `diagnostic.usage` 事件。每个事件以单行 JSONL 格式写入，包含时间戳、会话上下文和完整载荷。
 
-## JSONL 记录类型
-
-每条记录包含顶层字段 `type`、`ts`、`sessionKey`、`sessionId`、`agentId`。部分类型还包含 `payload` 对象用于存储捕获的完整内容。
-
-| 类型 | 关键字段（顶层，除非另行说明） |
-|------|-------------------------------|
-| `model.resolve` | prompt（模型选择前的路由决策） |
-| `llm.input` | model, provider, runId, payload.{systemPrompt, prompt, historyMessages, imagesCount} |
-| `llm.output` | model, provider, runId, success, durationMs, stopReason, payload.{assistantTexts, lastAssistant}, usage.{input, output, cacheRead, cacheWrite, total} |
-| `tool.start` | toolName, toolCallId, params |
-| `tool.end` | toolName, toolCallId, success, error, durationMs |
-| `agent.start` | prompt, messageCount |
-| `agent.end` | success, durationMs, error, messageCount |
-| `compaction.before` | messageCount, compactingCount, tokenCount |
-| `compaction.after` | messageCount, compactedCount, tokenCount |
-| `diagnostic.usage` | model, provider, contextLimit, contextUsed, inputTokens, outputTokens, costUsd, durationMs |
-
-### 使用 jq 快速查询
+## 使用 jq 快速查询
 
 ```bash
 # 统计每个模型的 LLM 调用次数
@@ -182,7 +202,7 @@ jq -r 'select(.type=="llm.input") | .model' ~/.openclaw/logs/llm-doctor/*.jsonl 
 # 查找所有错误
 jq 'select(.type=="llm.output" and .success==false)' ~/.openclaw/logs/llm-doctor/*.jsonl
 
-# 每次调用的 token 用量
+# 每次调用的 Token 用量
 jq 'select(.usage) | {model, input: .usage.input, output: .usage.output}' ~/.openclaw/logs/llm-doctor/*.jsonl
 ```
 

@@ -21,6 +21,8 @@ from claw_llm_doctor.reporters.json_report import (
 )
 from claw_llm_doctor.utils.tokens import format_tokens
 
+import statistics
+
 
 def pct(v: float) -> str:
     return f"{v * 100:.1f}%"
@@ -94,6 +96,100 @@ HTML_TEMPLATE = """\
 
 
 # -- Section renderers -----------------------------------------------------
+
+
+def render_executive_summary(
+    routing: RoutingReport,
+    contexts: list[ContextReport] | None = None,
+    thinkings: list[ThinkingReport] | None = None,
+    performances: list[PerformanceReport] | None = None,
+) -> str:
+    """Render an executive summary card with key aggregate metrics."""
+    session_count = len(routing.session_summaries)
+    total_calls = routing.total_calls
+
+    if routing.timeline:
+        first_ts = routing.timeline[0]["timestamp"]
+        last_ts = routing.timeline[-1]["timestamp"]
+        span_hours = (last_ts - first_ts) / 3_600_000
+        span_str = f"{span_hours:.1f}h" if span_hours >= 1 else f"{(last_ts - first_ts) / 60_000:.0f}m"
+    else:
+        span_str = "?"
+
+    # Aggregate perf stats
+    agg_input = agg_output = agg_cache_read = 0
+    agg_lats: list[int] = []
+    agg_tps: list[float] = []
+    if performances:
+        for p in performances:
+            agg_input += p.total_input_tokens
+            agg_output += p.total_output_tokens
+            agg_cache_read += p.total_cache_read
+            for c in p.calls:
+                if c.e2e_ms is not None and c.success:
+                    agg_lats.append(c.e2e_ms)
+                if c.output_tps > 0 and c.success:
+                    agg_tps.append(c.output_tps)
+
+    agg_total_prompt = agg_input + agg_cache_read
+    cache_hit = (agg_cache_read / agg_total_prompt) if agg_total_prompt > 0 else 0.0
+    avg_lat = statistics.mean(agg_lats) if agg_lats else 0.0
+    avg_tps = statistics.mean(agg_tps) if agg_tps else 0.0
+
+    html = '<h2>Executive Summary</h2><div class="card">'
+    html += f'<p>{_esc(session_count)} session(s), {_esc(total_calls)} LLM calls over {_esc(span_str)}</p>'
+
+    metrics = [
+        ("Requests", total_calls),
+        ("Success Rate", pct(routing.overall_success_rate)),
+        ("Input Tokens", format_tokens(agg_input)),
+        ("Output Tokens", format_tokens(agg_output)),
+        ("Cache Read", format_tokens(agg_cache_read)),
+        ("Cache Hit Rate", pct(cache_hit)),
+    ]
+    if avg_lat > 0:
+        metrics.append(("Avg Latency", f"{avg_lat:.0f}ms"))
+    if avg_tps > 0:
+        metrics.append(("Avg Throughput", f"{avg_tps:.1f} tok/s"))
+
+    for label, val in metrics:
+        html += f'<div class="metric"><div class="label">{label}</div><div class="value">{val}</div></div>'
+    html += '</div>'
+
+    # Model info
+    if routing.primary_model:
+        rate = routing.primary_success_rate
+        rate_cls = "tag-green" if rate >= 0.95 else ("tag-yellow" if rate >= 0.8 else "tag-red")
+        html += f'<div class="card"><strong>Primary:</strong> {_esc(routing.primary_model)} '
+        html += f'<span class="tag {rate_cls}">{pct(rate)} success</span> ({routing.primary_calls} calls)'
+        if routing.fallback_calls > 0:
+            f_rate = routing.fallback_success_rate
+            f_cls = "tag-green" if f_rate >= 0.95 else ("tag-yellow" if f_rate >= 0.8 else "tag-red")
+            html += f' &nbsp; <strong>Fallback:</strong> <span class="tag {f_cls}">{pct(f_rate)} success</span> ({routing.fallback_calls} calls)'
+        html += '</div>'
+
+    # Findings
+    findings: list[str] = []
+    if routing.total_failure > 0:
+        findings.append(f'<span class="tag tag-red">{routing.total_failure} failed</span> '
+                       f'({pct(routing.total_failure / routing.total_calls)} failure rate)')
+    if routing.fallback_chains:
+        findings.append(f'{len(routing.fallback_chains)} fallback chain(s) detected')
+    total_leakage = sum(t.turns_with_leakage for t in (thinkings or []))
+    if total_leakage > 0:
+        findings.append(f'<span class="tag tag-red">{total_leakage} turn(s)</span> with thinking leakage')
+    for model, count in routing.calls_by_model.most_common():
+        fail = routing.failure_by_model.get(model, 0)
+        if count >= 3 and fail / count > 0.3:
+            findings.append(f'{_esc(model)}: {pct(fail / count)} failure rate ({fail}/{count})')
+
+    if findings:
+        html += '<div class="card"><strong>Findings:</strong><ul>'
+        for f in findings:
+            html += f'<li>{f}</li>'
+        html += '</ul></div>'
+
+    return html
 
 
 def render_routing(report: RoutingReport) -> str:
@@ -454,6 +550,7 @@ def generate_html(
     sections: list[str] = []
 
     if routing:
+        sections.append(render_executive_summary(routing, contexts, thinkings, performances))
         sections.append(render_routing(routing))
     if contexts:
         for c in contexts:

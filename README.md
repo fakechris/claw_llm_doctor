@@ -6,75 +6,131 @@
 
 [English](README.md) | [中文](README_zh.md)
 
-Diagnostic toolkit for [OpenClaw](https://github.com/openclaw) -- intercept, record, and analyze every LLM Provider call your agent makes.
+**Your AI agent is burning money and you can't see why.**
 
-**claw-llm-doctor** captures full request/response payloads via an OpenClaw Gateway plugin and provides a CLI to analyze routing decisions, context window composition, system prompt integrity, and thinking process quality.
+Every LLM call your [OpenClaw](https://github.com/openclaw) agent makes is a black box: which model handled it? Did it fall back silently? Is the context window filling up? Is the model's "thinking" leaking into user-visible output? How much of your prompt cache is actually hitting?
 
-## Installation
-
-Recommended: install globally with [uv](https://docs.astral.sh/uv/):
+**claw-llm-doctor** answers all of these questions. One command to install, one command to diagnose.
 
 ```bash
-uv tool install git+https://github.com/fakechris/claw_llm_doctor.git
+pip install claw-llm-doctor
+claw-llm-doctor enable   # hooks into OpenClaw Gateway
+claw-llm-doctor full     # instant diagnostic report
 ```
 
-<details>
-<summary>Alternative: install with pipx</summary>
+## What You Get
 
-```bash
-pipx install git+https://github.com/fakechris/claw_llm_doctor.git
+> [**View a live demo report**](docs/demo-report.html) (self-contained HTML, no server needed)
+
+### Executive Summary — One glance, all the numbers
+
 ```
-</details>
+  Analyzed 7 session(s), 224 LLM calls over 23.5h
 
-<details>
-<summary>Alternative: install inside a virtual environment</summary>
+               Key Metrics
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Metric                   ┃     Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Total requests           │       224 │
+│ Success rate             │     52.7% │
+│ Input tokens             │      6.3M │
+│ Output tokens            │     65.8k │
+│ Cache read tokens        │      7.7M │
+│ Cache hit rate           │     55.0% │
+│ Avg latency (success)    │   69869ms │
+│ Avg throughput (success) │ 7.4 tok/s │
+└──────────────────────────┴───────────┘
 
-```bash
-git clone https://github.com/fakechris/claw_llm_doctor.git
-cd claw_llm_doctor
-uv venv && source .venv/bin/activate
-uv pip install .
+  Findings:
+    • 106 failed call(s) (47.3% failure rate)
+    • 7 fallback chain(s) detected
+    • 2 turn(s) with thinking leakage
+    • Model doubao-seed-2.0-code has 82.5% failure rate (99/120)
 ```
-</details>
 
-> Once published to PyPI: `uv tool install claw-llm-doctor` or `pipx install claw-llm-doctor`.
+### 5 Analysis Layers — Every blind spot covered
+
+| Layer | What it reveals | Why it matters |
+|-------|----------------|---------------|
+| **Routing** | Primary/fallback split, success rates, error classification, fallback chains | "82% of calls to our fallback model are silently failing" |
+| **Context** | Token breakdown per turn, utilization curve, compaction events | "Context window hit 95% at turn 47 — that's when quality degraded" |
+| **Prompt Integrity** | Section ordering stability, content loss after truncation | "The tool definitions section disappeared after compaction" |
+| **Thinking** | Think/content ratio, leakage detection across 4 categories | "The model's inner monologue leaked into 3 user-facing responses" |
+| **Performance** | E2E latency, throughput, cache hit rate per model | "Primary model averages 7.4 tok/s but fallback drops to 2.1" |
+
+### Output Formats
+
+- **Terminal** — Rich tables and color-coded output, perfect for quick checks
+- **HTML** — Self-contained dark-theme report, share with your team
+- **JSON** — Structured data for dashboards and automation
 
 ## Quick Start
 
-**1. Enable the plugin** (auto-installs into OpenClaw Gateway):
+**1. Install:**
+
+```bash
+pip install claw-llm-doctor
+# or
+uv tool install claw-llm-doctor
+```
+
+**2. Enable the plugin** (auto-installs into OpenClaw Gateway):
 
 ```bash
 claw-llm-doctor enable
 ```
 
-This copies the interceptor plugin to `~/.openclaw/extensions/`, runs `npm install`, updates your config, and restarts the daemon. That's it -- all LLM calls are now being recorded.
+This copies the interceptor plugin to `~/.openclaw/extensions/`, runs `npm install`, updates your config, and restarts the daemon. All LLM calls are now recorded.
 
-**2. Use OpenClaw as normal.** The plugin writes JSONL logs to `~/.openclaw/logs/llm-doctor/`.
+**3. Use OpenClaw as normal.** The plugin writes JSONL logs to `~/.openclaw/logs/llm-doctor/`.
 
-**3. Analyze:**
+**4. Diagnose:**
 
 ```bash
-# List captured sessions
-claw-llm-doctor sessions
-
-# Run full diagnostic report
+# Run full diagnostic (default: last 24h)
 claw-llm-doctor full
 
-# Generate an HTML report
+# Generate a shareable HTML report
 claw-llm-doctor full --format html -o report.html
+
+# Analyze specific layers
+claw-llm-doctor routing
+claw-llm-doctor performance
+claw-llm-doctor thinking
+
+# Replay a session as a conversation timeline
+claw-llm-doctor replay --session <KEY>
+
+# Export raw data
+claw-llm-doctor export --session <KEY> -o session.json
 ```
 
-## What It Analyzes
+## Commands
 
-| Command | Layer | What It Reveals |
-|---------|-------|-----------------|
-| `claw-llm-doctor routing` | LM Routing | Primary/fallback split, success rates, error classification, fallback chains, degradation detection |
-| `claw-llm-doctor context` | Context | Token breakdown per turn (system, tools, history, thinking), utilization health, growth curve |
-| `claw-llm-doctor prompt-order` | Prompt Order | Section ordering stability, missing sections after compaction |
-| `claw-llm-doctor prompt-compression` | Compression | Content loss from truncation, similarity vs baseline, compaction events |
-| `claw-llm-doctor thinking` | Thinking | Thinking/content ratio, leakage detection (inner monologue in output) |
-| `claw-llm-doctor replay --session KEY` | Replay | Human-readable conversation timeline with color-coded events |
-| `claw-llm-doctor full` | All | Combined report across all layers |
+| Command | Layer | Description |
+|---------|-------|-------------|
+| `routing` | LM Routing | Model routing decisions, success rates, error classification, fallback chains |
+| `context` | Context | Token composition per turn, utilization health, growth curve |
+| `prompt-order` | Prompt Integrity | Section ordering stability, missing sections after compaction |
+| `prompt-compression` | Compression | Content loss from truncation, similarity vs baseline |
+| `thinking` | Thinking | Thinking/content ratio, leakage detection (inner monologue in output) |
+| `performance` | Performance | E2E latency, throughput (tok/s), cache hit rate per model |
+| `full` | All | Combined report with executive summary |
+| `sessions` | - | List all captured sessions |
+| `replay` | - | Human-readable conversation timeline |
+| `export` | - | Raw record export as JSON |
+
+## Common Options
+
+```
+--since TIME         Time range start (default: 24h). '30m', '1h', '2h30m', 'all', or ISO datetime
+--until TIME         Time range end
+--session KEY        Filter to a specific session
+--primary-model ID   Override primary model for routing classification
+--format             terminal (default), json, or html
+-o, --output PATH    Write output to file
+--token-method       char (fast, default) or tiktoken (accurate)
+```
 
 ## Plugin Management
 
@@ -86,7 +142,7 @@ claw-llm-doctor status     # Check installation state
 
 ### Plugin Configuration
 
-The plugin can be configured in `~/.openclaw/openclaw.json`:
+Configure in `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -112,68 +168,32 @@ The plugin can be configured in `~/.openclaw/openclaw.json`:
 | `maxPayloadSize` | `0` | Max payload size in bytes (0 = unlimited) |
 | `rotateMaxSize` | `104857600` | Log rotation threshold (100 MB) |
 
-## Common Options
-
-All analysis commands accept:
+## How It Works
 
 ```
---file PATH          Analyze a single JSONL file
---log-dir PATH       Custom log directory
---session KEY        Filter to a specific session
---since TIME         Only include records after this time (e.g. '30m', '1h', '2026-03-11T10:00')
---until TIME         Only include records before this time (same format as --since)
---primary-model ID   Override primary model for routing classification
---token-method       char (fast, default) or tiktoken (accurate)
---format             terminal (default), json, or html
--o, --output PATH    Write output to file
-```
-
-## Architecture
-
-```
-┌─────────────────────────┐     JSONL      ┌──────────────────┐
+┌─────────────────────────┐     JSONL      ┌──────────────────────┐
 │   OpenClaw Gateway      │ ──────────────> │  claw-llm-doctor CLI │
-│   + llm-doctor plugin   │  ~/.openclaw/   │  (Python)        │
-│   (TypeScript)          │  logs/          │                  │
-└─────────────────────────┘                 └──────────────────┘
-                                                     │
-                                             ┌───────┴───────┐
-                                             │   Analyzers   │
-                                             │ routing       │
-                                             │ context       │
-                                             │ prompt-order  │
-                                             │ compression   │
-                                             │ thinking      │
-                                             └───────┬───────┘
-                                                     │
-                                             ┌───────┴───────┐
-                                             │  Reporters    │
-                                             │ terminal      │
-                                             │ json          │
-                                             │ html          │
-                                             └───────────────┘
+│   + llm-doctor plugin   │  ~/.openclaw/   │  (Python)            │
+│   (TypeScript)          │  logs/          │                      │
+└─────────────────────────┘                 └──────────┬───────────┘
+                                                       │
+                                            ┌──────────┴──────────┐
+                                            │     Analyzers       │
+                                            │  routing · context  │
+                                            │  prompt · thinking  │
+                                            │    performance      │
+                                            └──────────┬──────────┘
+                                                       │
+                                            ┌──────────┴──────────┐
+                                            │     Reporters       │
+                                            │  terminal · html    │
+                                            │       json          │
+                                            └─────────────────────┘
 ```
 
-The plugin intercepts `llm_input`, `llm_output`, `before_tool_call`, `after_tool_call`, `agent_start`, `agent_end`, `compaction`, and `diagnostic.usage` events. Each event is written as a single JSONL line with timestamps, session context, and optional payloads.
+The plugin intercepts `llm_input`, `llm_output`, `tool_call`, `agent_start/end`, `compaction`, and `diagnostic.usage` events. Each event is written as a single JSONL line with timestamps, session context, and full payloads.
 
-## JSONL Record Types
-
-Every record has top-level `type`, `ts`, `sessionKey`, `sessionId`, and `agentId` fields. Some types carry an additional `payload` object for captured content.
-
-| Type | Key Fields (top-level unless noted) |
-|------|--------------------------------------|
-| `model.resolve` | prompt (routing decision before model selection) |
-| `llm.input` | model, provider, runId, payload.{systemPrompt, prompt, historyMessages, imagesCount} |
-| `llm.output` | model, provider, runId, success, durationMs, stopReason, payload.{assistantTexts, lastAssistant}, usage.{input, output, cacheRead, cacheWrite, total} |
-| `tool.start` | toolName, toolCallId, params |
-| `tool.end` | toolName, toolCallId, success, error, durationMs |
-| `agent.start` | prompt, messageCount |
-| `agent.end` | success, durationMs, error, messageCount |
-| `compaction.before` | messageCount, compactingCount, tokenCount |
-| `compaction.after` | messageCount, compactedCount, tokenCount |
-| `diagnostic.usage` | model, provider, contextLimit, contextUsed, inputTokens, outputTokens, costUsd, durationMs |
-
-### Quick-query with jq
+## Quick Query with jq
 
 ```bash
 # Count LLM calls per model
