@@ -644,6 +644,50 @@ def print_executive_summary(
                   f"[bold]{total_calls}[/bold] LLM calls over [bold]{span_str}[/bold]")
     console.print()
 
+    # Aggregate performance stats across all sessions
+    agg_input_tokens = 0
+    agg_output_tokens = 0
+    agg_cache_read = 0
+    agg_latencies: list[int] = []
+    agg_throughputs: list[float] = []
+    if performances:
+        for p in performances:
+            agg_input_tokens += p.total_input_tokens
+            agg_output_tokens += p.total_output_tokens
+            agg_cache_read += p.total_cache_read
+            for c in p.calls:
+                if c.e2e_ms is not None and c.success:
+                    agg_latencies.append(c.e2e_ms)
+                if c.output_tps > 0 and c.success:
+                    agg_throughputs.append(c.output_tps)
+
+    agg_total_prompt = agg_input_tokens + agg_cache_read
+    agg_cache_hit = (agg_cache_read / agg_total_prompt) if agg_total_prompt > 0 else 0.0
+
+    # Key metrics table
+    t = Table(show_header=True, header_style="bold", title="Key Metrics")
+    t.add_column("Metric", style="cyan")
+    t.add_column("Value", justify="right")
+
+    t.add_row("Total requests", str(total_calls))
+    t.add_row("Success rate", pct(routing.overall_success_rate))
+    t.add_row("Input tokens", format_tokens(agg_input_tokens))
+    t.add_row("Output tokens", format_tokens(agg_output_tokens))
+    t.add_row("Cache read tokens", format_tokens(agg_cache_read))
+    cache_color = "green" if agg_cache_hit >= 0.5 else ("yellow" if agg_cache_hit >= 0.2 else "red")
+    t.add_row("Cache hit rate", Text(pct(agg_cache_hit), style=cache_color))
+    if agg_latencies:
+        import statistics
+        avg_lat = statistics.mean(agg_latencies)
+        t.add_row("Avg latency (success)", f"{avg_lat:.0f}ms")
+    if agg_throughputs:
+        import statistics
+        avg_tps = statistics.mean(agg_throughputs)
+        t.add_row("Avg throughput (success)", f"{avg_tps:.1f} tok/s")
+    console.print(t)
+
+    console.print()
+
     # Model success rates
     if routing.primary_model:
         p_rate = routing.primary_success_rate
