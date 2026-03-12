@@ -1,6 +1,6 @@
 [project]
 name = "claw-llm-doctor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Diagnostic toolkit for OpenClaw — intercept, record, and analyze LLM Provider calls"
 readme = "README.md"
 requires-python = ">=3.10"

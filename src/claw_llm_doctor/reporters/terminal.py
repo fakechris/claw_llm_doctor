@@ -132,7 +132,7 @@ def print_routing(report: RoutingReport) -> None:
         for idx, entry in enumerate(display_entries):
             if omitted and idx == 15:
                 tt.add_row(f"... {omitted} omitted ...", "", "", "", "", "", "")
-            ts_str = datetime.fromtimestamp(entry["timestamp"] / 1000).strftime("%H:%M:%S")
+            ts_str = datetime.fromtimestamp(entry["timestamp"] / 1000).strftime("%m-%d %H:%M:%S")
             role_label = "Primary" if entry["is_primary"] is True else (
                 "Fallback" if entry["is_primary"] is False else "?"
             )
@@ -162,8 +162,8 @@ def print_routing(report: RoutingReport) -> None:
         sot.add_column("Rate", justify="right")
 
         for bucket in report.success_over_time:
-            start_str = datetime.fromtimestamp(bucket["bucket_start"] / 1000).strftime("%H:%M")
-            end_str = datetime.fromtimestamp(bucket["bucket_end"] / 1000).strftime("%H:%M")
+            start_str = datetime.fromtimestamp(bucket["bucket_start"] / 1000).strftime("%m-%d %H:%M")
+            end_str = datetime.fromtimestamp(bucket["bucket_end"] / 1000).strftime("%m-%d %H:%M")
             rate_style = "green" if bucket["rate"] >= 0.9 else ("yellow" if bucket["rate"] >= 0.7 else "red")
             sot.add_row(
                 f"{start_str}-{end_str}",
@@ -415,7 +415,7 @@ def print_thinking(report: ThinkingReport) -> None:
         for turn in report.turns:
             if turn.has_leakage:
                 model_str = f"  model={turn.model}" if turn.model else ""
-                ts_str = datetime.fromtimestamp(turn.ts / 1000).strftime("%H:%M:%S") if turn.ts else "?"
+                ts_str = datetime.fromtimestamp(turn.ts / 1000).strftime("%m-%d %H:%M:%S") if turn.ts else "?"
                 console.print(f"\n  Turn {turn.turn_index} [{turn.leakage_severity}]{model_str}  [dim]{ts_str}[/dim]:")
                 for li in turn.leakage_instances[:3]:
                     console.print(f"    [{li.category}/{li.pattern_name}] \"{li.matched_text}\"")
@@ -439,7 +439,7 @@ def print_thinking(report: ThinkingReport) -> None:
         for t in thinking_turns:
             cats = ", ".join(sorted({b.category for b in t.thinking_blocks}))
             leak_indicator = Text("\u25cf", style=severity_color(t.leakage_severity))
-            ts_str = datetime.fromtimestamp(t.ts / 1000).strftime("%H:%M:%S") if t.ts else "-"
+            ts_str = datetime.fromtimestamp(t.ts / 1000).strftime("%m-%d %H:%M:%S") if t.ts else "-"
             tt.add_row(
                 str(t.turn_index),
                 ts_str,
@@ -531,7 +531,7 @@ def print_performance(report: PerformanceReport) -> None:
         st.add_column("tok/s", justify="right")
 
         for c in slowest:
-            ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%H:%M:%S") if c.ts else "-"
+            ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%m-%d %H:%M:%S") if c.ts else "-"
             st.add_row(
                 str(c.turn_index),
                 ts_str,
@@ -553,7 +553,7 @@ def print_performance(report: PerformanceReport) -> None:
         ft.add_column("E2E", justify="right")
 
         for c in failed_calls[:10]:
-            ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%H:%M:%S") if c.ts else "-"
+            ts_str = datetime.fromtimestamp(c.ts / 1000).strftime("%m-%d %H:%M:%S") if c.ts else "-"
             dur = f"{c.e2e_ms}ms" if c.e2e_ms is not None else "-"
             ft.add_row(
                 str(c.turn_index),
@@ -599,8 +599,8 @@ def print_performance(report: PerformanceReport) -> None:
                 bc = buckets[idx]
                 start_ts = first_ts + idx * bucket_ms
                 end_ts = start_ts + bucket_ms
-                start_str = datetime.fromtimestamp(start_ts / 1000).strftime("%H:%M")
-                end_str = datetime.fromtimestamp(end_ts / 1000).strftime("%H:%M")
+                start_str = datetime.fromtimestamp(start_ts / 1000).strftime("%m-%d %H:%M")
+                end_str = datetime.fromtimestamp(end_ts / 1000).strftime("%m-%d %H:%M")
                 lats = [c.e2e_ms for c in bc if c.e2e_ms is not None]
                 tps_list = [c.output_tps for c in bc if c.output_tps > 0]
                 models = sorted(set(c.model or "?" for c in bc))

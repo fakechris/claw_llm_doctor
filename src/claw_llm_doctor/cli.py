@@ -72,9 +72,9 @@ def source_options(f):
     )(f)
     f = click.option(
         "--since",
-        default=None,
-        help="Only include records after this time. Accepts: '30m', '1h', '2h30m', "
-        "or ISO datetime '2026-03-11T10:00:00'",
+        default="24h",
+        help="Only include records after this time (default: 24h). "
+        "Accepts: '30m', '1h', '2h30m', 'all', or ISO datetime '2026-03-11T10:00:00'",
     )(f)
     f = click.option(
         "--until",
@@ -148,7 +148,7 @@ def load_records(log_dir, log_file, since=None, until=None):
             sys.exit(1)
         records = load_dir(directory)
 
-    since_ms = _parse_time_spec(since) if since else None
+    since_ms = _parse_time_spec(since) if since and since != "all" else None
     until_ms = _parse_time_spec(until) if until else None
     records = filter_by_time(records, since_ms, until_ms)
 
