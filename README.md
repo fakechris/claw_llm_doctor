@@ -20,7 +20,7 @@ claw-llm-doctor full     # instant diagnostic report
 
 ## What You Get
 
-> [**View a live demo report**](docs/demo-report.html) (self-contained HTML, no server needed)
+> [**View a live demo report**](https://fakechris.github.io/claw_llm_doctor/demo-report.html) (self-contained HTML, no server needed)
 
 ### Executive Summary — One glance, all the numbers
 

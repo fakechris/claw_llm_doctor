@@ -20,7 +20,7 @@ claw-llm-doctor full     # 一键诊断报告
 
 ## 你会得到什么
 
-> [**查看 Demo 报告**](docs/demo-report.html)（自包含 HTML，无需服务器）
+> [**查看 Demo 报告**](https://fakechris.github.io/claw_llm_doctor/demo-report.html)（自包含 HTML，无需服务器）
 
 ### 执行摘要 — 一眼看清全局
 
