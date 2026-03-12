@@ -74,6 +74,15 @@ pip install claw-llm-doctor
 uv tool install claw-llm-doctor
 ```
 
+> **Note:** If `claw-llm-doctor` isn't found after install, add `~/.local/bin` to your PATH:
+> ```bash
+> # For zsh (macOS default):
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+>
+> # For bash:
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+> ```
+
 **2. Enable the plugin** (auto-installs into OpenClaw Gateway):
 
 ```bash

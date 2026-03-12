@@ -74,6 +74,15 @@ pip install claw-llm-doctor
 uv tool install claw-llm-doctor
 ```
 
+> **注意：** 如果安装后找不到 `claw-llm-doctor` 命令，请将 `~/.local/bin` 添加到 PATH：
+> ```bash
+> # zsh (macOS 默认)：
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+>
+> # bash：
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+> ```
+
 **2. 启用插件**（自动安装到 OpenClaw Gateway）：
 
 ```bash
